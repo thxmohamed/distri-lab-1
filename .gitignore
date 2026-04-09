@@ -1,0 +1,17 @@
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.out
+
+# Binaries (from Makefile)
+/nbody2d
+/nbody2d.exe
+
+# Benchmark / analysis outputs
+*.dat
+*.png
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
