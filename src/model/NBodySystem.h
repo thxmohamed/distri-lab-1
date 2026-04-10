@@ -135,4 +135,21 @@ public:
      * Útil para retomar una simulación o comparar estados.
      */
     void loadFromFile(const std::string& filename);
+
+    /**
+    * Versión paralela básica (sin schedule explícito).
+    * Primer paso para validar paralelización.
+    */
+    void computeAccelerationsParallelSimple();
+
+    /**
+    * Selector de modo para experimentación:
+    * 0 = serial
+    * 1 = paralelo simple
+    * 2 = static
+    * 3 = dynamic
+    * 4 = guided
+    * 5 = collapse
+    */
+    void computeAccelerationsMode(int mode);
 };

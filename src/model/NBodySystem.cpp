@@ -91,6 +91,35 @@ void NBodySystem::computeAccelerations() {
 }
 
 // ----------------------------------------------------------------
+// (1.5) Paralela SIMPLE (primer paso del paralelismo)
+// ----------------------------------------------------------------
+void NBodySystem::computeAccelerationsParallelSimple() {
+    zeroAccelerations();
+    const int N = getCount();
+    const double e2 = epsilon_ * epsilon_;
+
+    #pragma omp parallel for
+    for (int i = 0; i < N; ++i) {
+        double lax = 0.0, lay = 0.0;
+
+        for (int j = 0; j < N; ++j) {
+            if (j == i) continue;
+
+            double dx = bodies_[j].getX() - bodies_[i].getX();
+            double dy = bodies_[j].getY() - bodies_[i].getY();
+            double dist2  = dx*dx + dy*dy + e2;
+            double dist3  = dist2 * std::sqrt(dist2);
+            double factor = G_ * bodies_[j].getMass() / dist3;
+
+            lax += factor * dx;
+            lay += factor * dy;
+        }
+
+        bodies_[i].setAcceleration(lax, lay);
+    }
+}
+
+// ----------------------------------------------------------------
 // (2) Paralela — schedule configurable sin chunk explícito
 //     schedule_type: 0=static, 1=dynamic, 2=guided
 // ----------------------------------------------------------------
@@ -364,5 +393,34 @@ void NBodySystem::loadFromFile(const std::string& filename) {
         Particle p(1.0, x, y, vx, vy);
         p.setAcceleration(ax, ay);
         bodies_.push_back(p);
+    }
+}
+
+// ----------------------------------------------------------------
+// Selector de modos (para experimentación del Rol 2)
+// ----------------------------------------------------------------
+void NBodySystem::computeAccelerationsMode(int mode) {
+    switch (mode) {
+        case 0:
+            computeAccelerations(); // serial
+            break;
+        case 1:
+            computeAccelerationsParallelSimple(); // paralelo básico
+            break;
+        case 2:
+            computeAccelerations(0); // static
+            break;
+        case 3:
+            computeAccelerations(1); // dynamic
+            break;
+        case 4:
+            computeAccelerations(2); // guided
+            break;
+        case 5:
+            computeAccelerationsCollapse(); // collapse
+            break;
+        default:
+            computeAccelerations(); // fallback seguro
+            break;
     }
 }
