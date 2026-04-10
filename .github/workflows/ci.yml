@@ -1,0 +1,32 @@
+# Nombre del flujo de trabajo
+name: CI
+
+# Especifica los eventos que dispararán el flujo de trabajo
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Flujo de trabajo
+jobs:
+  docker:
+    # Nombre del trabajo
+    name: Build Docker image
+    runs-on: ubuntu-24.04
+
+    steps:
+      # Clona el repositorio en la máquina virtual de GitHub Actions
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Construye la imagen según el Dockerfile presente en repositorio actual
+      - name: Build image
+        run: docker build -t lab1-distri .
+
+      # Verifica que la imagen se ha construido correctamente ejecutando el comando g++ --version para ver si se instalo el compilador de C++
+      - name: Verify toolchain
+        run: docker run --rm lab1-distri g++ --version
+
+      - name: Build project
+        run: docker run --rm lab1-distri make
