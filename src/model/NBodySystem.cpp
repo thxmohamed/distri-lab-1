@@ -397,7 +397,7 @@ void NBodySystem::loadFromFile(const std::string& filename) {
 }
 
 // ----------------------------------------------------------------
-// Selector de modos (para experimentación del Rol 2)
+// Selector de modos (para experimentación/comparaciones)
 // ----------------------------------------------------------------
 void NBodySystem::computeAccelerationsMode(int mode) {
     switch (mode) {
