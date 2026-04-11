@@ -30,3 +30,6 @@ jobs:
 
       - name: Build project
         run: docker run --rm lab1-distri make
+
+      - name: Run tests
+        run: docker run --rm lab1-distri make test

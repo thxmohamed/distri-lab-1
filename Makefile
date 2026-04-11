@@ -18,6 +18,10 @@ SOURCES := \
 	src/model/Particle.cpp \
 	src/model/NBodySystem.cpp
 
+UNIT_SOURCES      := $(wildcard tests/unit/*.cpp)
+INTEGRATION_SOURCES := $(wildcard tests/integration/*.cpp)
+TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp
+
 # Indica la Lista de archivos .o que son necesarios para construir el ejecutable
 OBJECTS := $(SOURCES:.cpp=.o)
 
@@ -36,7 +40,7 @@ $(TARGET_BIN): $(OBJECTS)
 
 # Borra los archivos generados por la compilación
 clean:
-	rm -f $(TARGET_BIN) $(OBJECTS) *.o *.dat *.png
+	rm -f $(TARGET_BIN) $(OBJECTS) run_unit run_integration *.o *.dat *.png
 
 benchmark: $(TARGET_BIN)
 	./$(TARGET_BIN) --benchmark
@@ -44,5 +48,8 @@ benchmark: $(TARGET_BIN)
 analysis: $(TARGET_BIN)
 	./$(TARGET_BIN) --analysis
 
-test: $(TARGET_BIN)
-	./$(TARGET_BIN) --self-test
+test:
+	$(CXX) $(CXXFLAGS) -o run_unit $(UNIT_SOURCES) $(TEST_LIB) $(LDFLAGS) -lgtest -lpthread
+	$(CXX) $(CXXFLAGS) -o run_integration $(INTEGRATION_SOURCES) $(TEST_LIB) $(LDFLAGS) -lgtest -lpthread
+	./run_unit
+	./run_integration
