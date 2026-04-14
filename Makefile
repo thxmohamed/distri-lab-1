@@ -16,11 +16,13 @@ TARGET_BIN := $(TARGET)$(EXEEXT)
 SOURCES := \
 	src/main.cpp \
 	src/model/Particle.cpp \
-	src/model/NBodySystem.cpp
+	src/model/NBodySystem.cpp \
+	src/simulation/Integrator.cpp \
+	src/simulation/NBodySimulator.cpp
 
 UNIT_SOURCES      := $(wildcard tests/unit/*.cpp)
 INTEGRATION_SOURCES := $(wildcard tests/integration/*.cpp)
-TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp
+TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp src/simulation/Integrator.cpp src/simulation/NBodySimulator.cpp
 
 # Indica la Lista de archivos .o que son necesarios para construir el ejecutable
 OBJECTS := $(SOURCES:.cpp=.o)
