@@ -8,28 +8,75 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  REGISTRY: ghcr.io
+
 # Flujo de trabajo
 jobs:
+  # Primero se verifica que la imagen se encuentre en el GHCR
+  ensure-image:
+    name: Verify base image exists in GHCR
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Image name
+        run: |
+          repo_lc=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE=ghcr.io/${repo_lc}:base" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull base image
+        run: |
+          if ! docker pull ${{ env.IMAGE }}; then
+            echo "::error::Imagen no encontrada en GHCR. Ejecuta el workflow docker.yml primero."
+            exit 1
+          fi
+
   docker:
     # Nombre del trabajo
     name: Build Docker image
+    needs: ensure-image
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       # Clona el repositorio en la máquina virtual de GitHub Actions
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      # Construye la imagen según el Dockerfile presente en repositorio actual
-      - name: Build image
-        run: docker build -t lab1-distri .
+      - name: Image name
+        run: |
+          repo_lc=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE=ghcr.io/${repo_lc}:base" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        run: docker pull ${{ env.IMAGE }}
 
       # Verifica que la imagen se ha construido correctamente ejecutando el comando g++ --version para ver si se instalo el compilador de C++
+      # "-v ${{ github.workspace }}:/app" monta el directorio con la última versión del código en el contenedor
       - name: Verify toolchain
-        run: docker run --rm lab1-distri g++ --version
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ env.IMAGE }} g++ --version
 
       - name: Build project
-        run: docker run --rm lab1-distri make
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ env.IMAGE }} make
 
       - name: Run tests
-        run: docker run --rm lab1-distri make test
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ env.IMAGE }} make test
