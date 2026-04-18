@@ -1,4 +1,4 @@
-# OS que usará el contenedor
+# OS que usara el contenedor
 FROM ubuntu:24.04 
 
 # g++ Compilador de C++
