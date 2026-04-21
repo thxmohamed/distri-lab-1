@@ -2,7 +2,7 @@ CXX ?= g++ # Compilador a usar
 
 # Habilita paralelismo, optimizaciones y advertencias
 # -Isrc para encontrar los archivos de encabezado
-CXXFLAGS ?= -Wall -Wextra -O3 -fopenmp -std=c++17 -Isrc -Isrc/model -Isrc/simulation
+CXXFLAGS ?= -Wall -Wextra -O3 -fopenmp -std=c++17 -Isrc -Isrc/model -Isrc/simulation -Ibenchmarks
 LDFLAGS  ?= -fopenmp # Bandera para que la librería OpenMP se enlace correctamente
 
 TARGET := lab1_distri
@@ -18,8 +18,9 @@ SOURCES := \
 	src/model/Particle.cpp \
 	src/model/NBodySystem.cpp \
 	src/simulation/Integrator.cpp \
-	src/simulation/NBodySimulator.cpp
-
+	src/simulation/NBodySimulator.cpp \
+	benchmarks/Benchmark.cpp
+	
 UNIT_SOURCES      := $(wildcard tests/unit/*.cpp)
 INTEGRATION_SOURCES := $(wildcard tests/integration/*.cpp)
 TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp src/simulation/Integrator.cpp src/simulation/NBodySimulator.cpp
