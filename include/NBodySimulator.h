@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/NBodySystem.h"
+#include "NBodySystem.h"
 
 /**
  * NBodySimulator

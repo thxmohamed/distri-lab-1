@@ -2,7 +2,7 @@ CXX ?= g++ # Compilador a usar
 
 # Habilita paralelismo, optimizaciones y advertencias
 # -Isrc para encontrar los archivos de encabezado
-CXXFLAGS ?= -Wall -Wextra -O3 -fopenmp -std=c++17 -Isrc -Isrc/model -Isrc/simulation -Ibenchmarks
+CXXFLAGS ?= -Wall -Wextra -O3 -fopenmp -std=c++17 -Iinclude
 LDFLAGS  ?= -fopenmp # Bandera para que la librería OpenMP se enlace correctamente
 
 TARGET := lab1_distri

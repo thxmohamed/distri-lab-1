@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "model/NBodySystem.h"
-#include "model/Particle.h"
-#include "simulation/NBodySimulator.h"
+#include "NBodySystem.h"
+#include "Particle.h"
+#include "NBodySimulator.h"
 #include <cmath>
 
 // ============================================================

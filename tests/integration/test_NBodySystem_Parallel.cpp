@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "model/NBodySystem.h"
-#include "model/Particle.h"
+#include "NBodySystem.h"
+#include "Particle.h"
 #include <cmath>
 
 // ============================================================

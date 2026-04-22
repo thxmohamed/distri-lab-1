@@ -1,6 +1,6 @@
-#include "simulation/NBodySimulator.h"
+#include "NBodySimulator.h"
 
-#include "simulation/Integrator.h"
+#include "Integrator.h"
 
 #include <cmath>
 #include <stdexcept>
