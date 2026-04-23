@@ -14,7 +14,6 @@
  *
  * Además, expone rutas instrumentadas para experimentar con
  * distintas estrategias de sincronización y paralelismo
- * (sección 7.2 del laboratorio).
  */
 class NBodySimulator {
 private:
@@ -27,6 +26,11 @@ private:
     double potential_energy_;
     double total_energy_;
 
+    // Configuración del cálculo de aceleraciones
+    bool use_parallel_accel_;
+    int schedule_type_;
+    int chunk_size_;
+
 public:
     // ----------------------------------------------------------------
     // Constructor
@@ -37,6 +41,16 @@ public:
      * @param dt  Paso temporal (dt > 0).
      */
     NBodySimulator(NBodySystem* sys, double dt);
+
+    /**
+     * Permite seleccionar si la simulación completa usa la versión
+     * serial o paralela del cálculo de aceleraciones.
+     *
+     * @param use_parallel   true = usa versión paralela
+     * @param schedule_type  0 = static, 1 = dynamic, 2 = guided
+     * @param chunk_size     Tamaño de chunk para el schedule
+     */
+    void setAccelerationMode(bool use_parallel, int schedule_type = 0, int chunk_size = 32);
 
     // ----------------------------------------------------------------
     // Integración temporal
@@ -170,6 +184,18 @@ public:
      * Ejemplo de inicialización paralela con single.
      */
     void parallelInitializationSingle();
+
+    /**
+     * Demostración de firstprivate en cálculo de métricas.
+     * Calcula energía total usando copias privadas inicializadas.
+     */
+    double calculateMetricsFirstprivate();
+
+    /**
+     * Demostración de lastprivate.
+     * Guarda el índice final procesado en un recorrido paralelo.
+     */
+    int calculateFinalStateLastprivate();
 
     // ----------------------------------------------------------------
     // Getters

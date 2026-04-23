@@ -20,6 +20,9 @@ NBodySimulator::NBodySimulator(NBodySystem* sys, double dt)
     , kinetic_energy_(0.0)
     , potential_energy_(0.0)
     , total_energy_(0.0)
+    , use_parallel_accel_(false)
+    , schedule_type_(0)
+    , chunk_size_(32)
 {
     if (system_ == nullptr) {
         throw std::invalid_argument(
@@ -32,6 +35,26 @@ NBodySimulator::NBodySimulator(NBodySystem* sys, double dt)
     }
 }
 
+
+// ----------------------------------------------------------------
+// Configura la estrategia de aceleraciones usada por integrateEuler
+// ----------------------------------------------------------------
+void NBodySimulator::setAccelerationMode(bool use_parallel, int schedule_type, int chunk_size) {
+    if (chunk_size <= 0) {
+        throw std::invalid_argument(
+            "NBodySimulator::setAccelerationMode: chunk_size debe ser > 0.");
+    }
+
+    if (schedule_type < 0 || schedule_type > 2) {
+        throw std::invalid_argument(
+            "NBodySimulator::setAccelerationMode: schedule_type inválido.");
+    }
+
+    use_parallel_accel_ = use_parallel;
+    schedule_type_ = schedule_type;
+    chunk_size_ = chunk_size;
+}
+
 // ================================================================
 // Integración temporal
 // ================================================================
@@ -41,7 +64,11 @@ NBodySimulator::NBodySimulator(NBodySystem* sys, double dt)
 //     Calcula aceleraciones y luego aplica Euler explícito
 // ----------------------------------------------------------------
 void NBodySimulator::integrateEuler() {
-    system_->computeAccelerations();
+    if (use_parallel_accel_) {
+        system_->computeAccelerations(schedule_type_, chunk_size_);
+    } else {
+        system_->computeAccelerations();
+    }
 
     auto& bodies = system_->getBodies();
     Integrator::applyKick(bodies, time_step_);
@@ -55,8 +82,9 @@ void NBodySimulator::integrateEuler() {
 //     Delega en la versión con control explícito de barrier
 // ----------------------------------------------------------------
 void NBodySimulator::integrateEuler(int sync_type) {
-    bool use_barrier = (sync_type != 2);
-    integrateEuler(sync_type, use_barrier);
+    // Por defecto se conserva el orden físico Euler:
+    // aceleraciones -> kick -> drift.
+    integrateEuler(sync_type, true);
 }
 
 // ----------------------------------------------------------------
@@ -67,7 +95,16 @@ void NBodySimulator::integrateEuler(int sync_type) {
 //       2 = nowait
 // ----------------------------------------------------------------
 void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
-    system_->computeAccelerations();
+    if (sync_type < 0 || sync_type > 2) {
+        throw std::invalid_argument(
+            "NBodySimulator::integrateEuler: sync_type inválido.");
+    }
+
+    if (use_parallel_accel_) {
+        system_->computeAccelerations(schedule_type_, chunk_size_);
+    } else {
+        system_->computeAccelerations();
+    }
 
     auto& bodies = system_->getBodies();
     const int N = system_->getCount();
@@ -237,7 +274,7 @@ double NBodySimulator::calculateEnergy() {
 }
 
 // ----------------------------------------------------------------
-// Ruta con method
+// Ruta con method: delega en la versión extendida
 // ----------------------------------------------------------------
 double NBodySimulator::calculateEnergy(int method) {
     return calculateEnergy(method, true);
@@ -250,6 +287,10 @@ double NBodySimulator::calculateEnergy(int method) {
 //       1 = atomic
 // ----------------------------------------------------------------
 double NBodySimulator::calculateEnergy(int method, bool use_private) {
+    if (method < 0 || method > 1) {
+        throw std::invalid_argument(
+            "NBodySimulator::calculateEnergy: method inválido.");
+    }
     const auto& bodies = system_->getBodies();
     const int N = system_->getCount();
     const double G = system_->getG();
@@ -399,6 +440,11 @@ void NBodySimulator::processBodies(int task_type) {
 //       1 = parallel for
 // ----------------------------------------------------------------
 void NBodySimulator::processBodies(int task_type, bool use_single) {
+    if (task_type < 0 || task_type > 1) {
+        throw std::invalid_argument(
+            "NBodySimulator::processBodies: task_type inválido.");
+    }
+    
     auto& bodies = system_->getBodies();
     const int N = system_->getCount();
 
@@ -466,7 +512,11 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
 // Demostración explícita de barrier entre fases
 // ----------------------------------------------------------------
 void NBodySimulator::simulatePhasesBarrier() {
-    system_->computeAccelerations();
+    if (use_parallel_accel_) {
+        system_->computeAccelerations(schedule_type_, chunk_size_);
+    } else {
+        system_->computeAccelerations();
+    }
 
     auto& bodies = system_->getBodies();
     const int N = system_->getCount();
@@ -510,9 +560,70 @@ void NBodySimulator::parallelInitializationSingle() {
             masses[i] = bodies[i].getMass();
     }
 
-    double total_mass = 0.0;
-    for (double m : masses)
-        total_mass += m;
+    // Solo demostración de single + parallel for.
+    // No modifica métricas físicas del simulador.
+}
 
-    total_energy_ = total_mass;
+
+// ----------------------------------------------------------------
+// Métricas con firstprivate:
+// usa copias privadas inicializadas de N, G y eps2
+// ----------------------------------------------------------------
+double NBodySimulator::calculateMetricsFirstprivate() {
+    const auto& bodies = system_->getBodies();
+    const int N = system_->getCount();
+    const double G = system_->getG();
+    const double eps2 = system_->getEpsilon() * system_->getEpsilon();
+
+    double K = 0.0;
+    double U = 0.0;
+
+    #pragma omp parallel for reduction(+:K) firstprivate(N)
+    for (int i = 0; i < N; ++i) {
+        double vx = bodies[i].getVx();
+        double vy = bodies[i].getVy();
+        K += 0.5 * bodies[i].getMass() * (vx * vx + vy * vy);
+    }
+
+    #pragma omp parallel for reduction(+:U) firstprivate(N, G, eps2)
+    for (int i = 0; i < N; ++i) {
+        for (int j = i + 1; j < N; ++j) {
+            double dx = bodies[j].getX() - bodies[i].getX();
+            double dy = bodies[j].getY() - bodies[i].getY();
+            double dist = std::sqrt(dx * dx + dy * dy + eps2);
+
+            U += -G * bodies[i].getMass() * bodies[j].getMass() / dist;
+        }
+    }
+
+    kinetic_energy_ = K;
+    potential_energy_ = U;
+    total_energy_ = K + U;
+
+    return total_energy_;
+}
+
+
+// ----------------------------------------------------------------
+// Recorrido con lastprivate:
+// conserva el último índice procesado por el for paralelo
+// ----------------------------------------------------------------
+int NBodySimulator::calculateFinalStateLastprivate() {
+    const auto& bodies = system_->getBodies();
+    const int N = system_->getCount();
+
+    int last_index = -1;
+
+    #pragma omp parallel for lastprivate(last_index)
+    for (int i = 0; i < N; ++i) {
+        // Lectura simple para que el recorrido tenga sentido físico.
+        double x = bodies[i].getX();
+        double y = bodies[i].getY();
+        (void)x;
+        (void)y;
+        
+        last_index = i;
+    }
+
+    return last_index;
 }
