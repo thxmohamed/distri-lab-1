@@ -12,4 +12,8 @@ public:
 
     static double centerOfMassX(const NBodySystem& system);
     static double centerOfMassY(const NBodySystem& system);
+
+    // Nuevas metricas fisicas
+    static double rmsRadius(const NBodySystem& system);
+    static double minPairDistance(const NBodySystem& system);
 };

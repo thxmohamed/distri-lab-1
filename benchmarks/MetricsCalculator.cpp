@@ -96,3 +96,69 @@ double MetricsCalculator::centerOfMassY(const NBodySystem& system) {
 
     return weighted_y / total_mass;
 }
+
+double MetricsCalculator::rmsRadius(const NBodySystem& system) {
+    const auto& bodies = system.getBodies();
+
+    double cmx = centerOfMassX(system);
+    double cmy = centerOfMassY(system);
+
+    double sum = 0.0;
+    double total_mass = 0.0;
+
+    #pragma omp parallel for reduction(+:sum,total_mass)
+    for (int i = 0; i < static_cast<int>(bodies.size()); i++) {
+        double m = bodies[i].getMass();
+
+        double dx = bodies[i].getX() - cmx;
+        double dy = bodies[i].getY() - cmy;
+
+        sum += m * (dx * dx + dy * dy);
+        total_mass += m;
+    }
+
+    if (total_mass == 0.0) {
+        return 0.0;
+    }
+
+    return std::sqrt(sum / total_mass);
+}
+
+double MetricsCalculator::minPairDistance(const NBodySystem& system) {
+    const auto& bodies = system.getBodies();
+    int N = static_cast<int>(bodies.size());
+
+    if (N < 2) {
+        return 0.0;
+    }
+
+    double min_dist = 1e300;
+
+    #pragma omp parallel
+    {
+        double local_min = 1e300;
+
+        #pragma omp for nowait
+        for (int i = 0; i < N; i++) {
+            for (int j = i + 1; j < N; j++) {
+                double dx = bodies[j].getX() - bodies[i].getX();
+                double dy = bodies[j].getY() - bodies[i].getY();
+
+                double dist = std::sqrt(dx * dx + dy * dy);
+
+                if (dist < local_min) {
+                    local_min = dist;
+                }
+            }
+        }
+
+        #pragma omp critical
+        {
+            if (local_min < min_dist) {
+                min_dist = local_min;
+            }
+        }
+    }
+
+    return min_dist;
+}
