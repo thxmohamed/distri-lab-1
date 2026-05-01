@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Particle.h"
+
 #include <vector>
 #include <string>
 #include <iosfwd>
@@ -47,7 +48,7 @@ public:
     std::vector<Particle>&       getBodies();       // acceso mutable (para Integrator)
 
     double getG()       const { return G_;       }
-    double getEpsilon() const { return epsilon_;  }
+    double getEpsilon() const { return epsilon_; }
 
     // ----------------------------------------------------------------
     // Preproceso de aceleraciones
@@ -62,10 +63,23 @@ public:
 
     /**
      * Versión serial de referencia.
+     *
+     * Se mantiene como serial para compatibilidad con código existente
+     * del proyecto, por ejemplo Benchmark o computeAccelerationsMode(0).
+     *
      * Bucle externo sobre i, bucle interno sobre j ≠ i.
      * Escribe únicamente bodies_[i].ax / ay.
      */
     void computeAccelerations();
+
+    /**
+     * Alias explícito de la versión serial de referencia.
+     *
+     * No reemplaza a computeAccelerations(); se agrega para que el código
+     * y los benchmarks puedan distinguir de forma clara entre versión serial
+     * y versiones paralelas.
+     */
+    void computeAccelerationsSerial();
 
     /**
      * Versión paralela con schedule configurable.
@@ -76,16 +90,35 @@ public:
     /**
      * Versión paralela con schedule y chunk explícito.
      * @param schedule_type  0 = static, 1 = dynamic, 2 = guided
-     * @param chunk_size     Tamaño de chunk para el schedule.
+     * @param chunk_size     Tamaño de chunk para el schedule. Debe ser > 0.
      */
     void computeAccelerations(int schedule_type, int chunk_size);
 
     /**
      * Versión con collapse(2) sobre el doble bucle i,j.
-     * Solo válida si el acceso a aceleraciones se protege adecuadamente.
-     * Rol 2 debe demostrar equivalencia con la ecuación del enunciado.
+     *
+     * Como collapse(2) reparte pares (i,j), múltiples hilos pueden intentar
+     * acumular sobre la misma aceleración i. Por eso la implementación usa
+     * arreglos auxiliares y atomic sobre ax_tmp[i], ay_tmp[i].
      */
     void computeAccelerationsCollapse();
+
+    /**
+     * Versión paralela básica sin schedule explícito.
+     * Primer paso para validar paralelización.
+     */
+    void computeAccelerationsParallelSimple();
+
+    /**
+     * Selector de modo para experimentación:
+     * 0 = serial
+     * 1 = paralelo simple
+     * 2 = static
+     * 3 = dynamic
+     * 4 = guided
+     * 5 = collapse
+     */
+    void computeAccelerationsMode(int mode);
 
     // ----------------------------------------------------------------
     // Inicialización de condiciones iniciales
@@ -101,7 +134,7 @@ public:
     /**
      * Disco: posiciones en anillo/círculo, velocidades tangenciales.
      * @param N      Número total de cuerpos.
-     * @param radius Radio del disco.
+     * @param radius Radio del disco. Debe ser > 0.
      * @param seed   Semilla para reproducibilidad.
      */
     void initDisk(int N, double radius = 1.0, unsigned int seed = 42);
@@ -109,7 +142,7 @@ public:
     /**
      * Perfil tipo Plummer proyectado a 2D.
      * @param N      Número total de cuerpos.
-     * @param a      Escala de Plummer.
+     * @param a      Escala de Plummer. Debe ser > 0.
      * @param seed   Semilla para reproducibilidad.
      */
     void initPlummer(int N, double a = 0.5, unsigned int seed = 42);
@@ -119,8 +152,12 @@ public:
     // ----------------------------------------------------------------
 
     /**
-     * Escribe el estado completo de todas las partículas a un stream.
-     * Formato: una línea por partícula → x y vx vy ax ay
+     * Escribe el estado de todas las partículas a un stream.
+     *
+     * Formato compatible con la versión original:
+     * una línea por partícula → x y vx vy ax ay
+     *
+     * Nota: por compatibilidad, no se escribe masa en este formato básico.
      */
     void writeState(std::ostream& out) const;
 
@@ -131,25 +168,13 @@ public:
     void saveToFile(const std::string& filename) const;
 
     /**
-     * Carga partículas desde un archivo .dat (formato writeState).
-     * Útil para retomar una simulación o comparar estados.
+     * Carga partículas desde un archivo .dat.
+     *
+     * Formatos soportados:
+     *  - x y vx vy ax ay
+     *  - m x y vx vy ax ay
+     *
+     * Si la masa no aparece, se usa m = 1.0 por compatibilidad.
      */
     void loadFromFile(const std::string& filename);
-
-    /**
-    * Versión paralela básica (sin schedule explícito).
-    * Primer paso para validar paralelización.
-    */
-    void computeAccelerationsParallelSimple();
-
-    /**
-    * Selector de modo para experimentación:
-    * 0 = serial
-    * 1 = paralelo simple
-    * 2 = static
-    * 3 = dynamic
-    * 4 = guided
-    * 5 = collapse
-    */
-    void computeAccelerationsMode(int mode);
 };
