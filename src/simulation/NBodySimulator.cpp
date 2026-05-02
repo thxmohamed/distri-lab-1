@@ -181,8 +181,9 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
     } else {
         // --------------------------------------------------------
         // nowait:
-        // omite la barrera implícita al final del primer for
-        // si use_barrier = true, se fuerza una barrera explícita
+        // Variante experimental para demostrar la cláusula nowait.
+        // Si use_barrier = false, no debe usarse para resultados físicos finales,
+        // porque puede permitir drift antes de que todos los cuerpos terminen kick.
         // --------------------------------------------------------
         #pragma omp parallel shared(bodies)
         {
@@ -546,6 +547,10 @@ void NBodySimulator::parallelInitializationSingle() {
     auto& bodies = system_->getBodies();
     const int N = system_->getCount();
 
+    if (N == 0) {
+        return;
+    }
+
     std::vector<double> masses;
 
     #pragma omp parallel shared(masses, bodies)
@@ -611,6 +616,10 @@ double NBodySimulator::calculateMetricsFirstprivate() {
 int NBodySimulator::calculateFinalStateLastprivate() {
     const auto& bodies = system_->getBodies();
     const int N = system_->getCount();
+
+    if (N == 0) {
+        return -1; // caso sin partículas
+    }
 
     int last_index = -1;
 

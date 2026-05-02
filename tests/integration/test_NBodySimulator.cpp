@@ -13,11 +13,13 @@
 // forma correcta sobre sistemas físicos simples.
 //
 // Se valida:
-// -Integración temporal básica con un solo cuerpo
-// -Cálculo de energía cinética
-// -Cálculo de energía potencial
-// -Consistencia entre calculateEnergy con reduce y atomic
-// -Ejecución coherente de integrateEuler instrumentado
+// - Integración temporal básica con un solo cuerpo
+// - Cálculo de energía cinética
+// - Cálculo de energía potencial
+// - Consistencia entre calculateEnergy con reduce y atomic
+// - Ejecución coherente de integrateEuler instrumentado
+// - Ejecución de rutas OpenMP: task, single, master, barrier,
+//   firstprivate, lastprivate y parallel for
 // ============================================================
 
 // ------------------------------------------------------------
@@ -87,7 +89,7 @@ TEST(NBodySimulator, EnergyReduceVsAtomic) {
 // ------------------------------------------------------------
 // TEST 5: integrateEuler instrumentado
 // ------------------------------------------------------------
-TEST(NBodySimulator, IntegrateEulerVariantsRun) {
+TEST(NBodySimulator, IntegrateEulerVariantsMatchReference) {
     NBodySystem sys0(1.0, 0.01);
     sys0.initBinary(8, 42);
 
@@ -122,4 +124,113 @@ TEST(NBodySimulator, IntegrateEulerVariantsRun) {
         EXPECT_NEAR(ref[i].getX(), n[i].getX(), 1e-9);
         EXPECT_NEAR(ref[i].getY(), n[i].getY(), 1e-9);
     }
+}
+
+// ------------------------------------------------------------
+// TEST 6: processBodies con task + single
+// Cubre task y single
+// ------------------------------------------------------------
+TEST(NBodySimulator, ProcessBodiesTaskSingleRuns) {
+    NBodySystem sys(1.0, 0.01);
+    sys.initBinary(20, 42);
+
+    NBodySimulator sim(&sys, 0.001);
+
+    EXPECT_NO_THROW(sim.processBodies(0, true));
+}
+
+// ------------------------------------------------------------
+// TEST 7: processBodies con task + master
+// Compara creación de tareas con master
+// ------------------------------------------------------------
+TEST(NBodySimulator, ProcessBodiesTaskMasterRuns) {
+    NBodySystem sys(1.0, 0.01);
+    sys.initBinary(20, 42);
+
+    NBodySimulator sim(&sys, 0.001);
+
+    EXPECT_NO_THROW(sim.processBodies(0, false));
+}
+
+// ------------------------------------------------------------
+// TEST 8: processBodies con parallel for
+// Cubre ruta parallel for
+// ------------------------------------------------------------
+TEST(NBodySimulator, ProcessBodiesParallelForRuns) {
+    NBodySystem sys(1.0, 0.01);
+    sys.initBinary(20, 42);
+
+    NBodySimulator sim(&sys, 0.001);
+
+    EXPECT_NO_THROW(sim.processBodies(1));
+}
+
+// ------------------------------------------------------------
+// TEST 9: simulatePhasesBarrier
+// Cubre barrier explícito entre fases
+// ------------------------------------------------------------
+TEST(NBodySimulator, SimulatePhasesBarrierRuns) {
+    NBodySystem sys(1.0, 0.01);
+    sys.initBinary(20, 42);
+
+    NBodySimulator sim(&sys, 0.001);
+
+    EXPECT_NO_THROW(sim.simulatePhasesBarrier());
+}
+
+// ------------------------------------------------------------
+// TEST 10: parallelInitializationSingle
+// Cubre single en inicialización paralela
+// ------------------------------------------------------------
+TEST(NBodySimulator, ParallelInitializationSingleRuns) {
+    NBodySystem sys(1.0, 0.01);
+    sys.initBinary(20, 42);
+
+    NBodySimulator sim(&sys, 0.001);
+
+    EXPECT_NO_THROW(sim.parallelInitializationSingle());
+}
+
+// ------------------------------------------------------------
+// TEST 11: calculateMetricsFirstprivate
+// Cubre firstprivate y compara con energía serial
+// ------------------------------------------------------------
+TEST(NBodySimulator, CalculateMetricsFirstprivateMatchesSerialEnergy) {
+    NBodySystem sys(1.0, 0.01);
+    sys.initBinary(20, 42);
+
+    NBodySimulator sim(&sys, 0.001);
+
+    double E_serial = sim.calculateTotalEnergy();
+    double E_firstprivate = sim.calculateMetricsFirstprivate();
+
+    EXPECT_NEAR(E_serial, E_firstprivate, 1e-9);
+}
+
+// ------------------------------------------------------------
+// TEST 12: calculateFinalStateLastprivate
+// Cubre lastprivate
+// ------------------------------------------------------------
+TEST(NBodySimulator, CalculateFinalStateLastprivateReturnsLastIndex) {
+    NBodySystem sys(1.0, 0.01);
+    sys.initBinary(20, 42);
+
+    NBodySimulator sim(&sys, 0.001);
+
+    int last_index = sim.calculateFinalStateLastprivate();
+
+    EXPECT_EQ(last_index, sys.getCount() - 1);
+}
+
+// ------------------------------------------------------------
+// TEST 13: calculateFinalStateLastprivate con sistema vacío
+// Verifica caso borde sin partículas
+// ------------------------------------------------------------
+TEST(NBodySimulator, CalculateFinalStateLastprivateEmptySystem) {
+    NBodySystem sys(1.0, 0.01);
+    NBodySimulator sim(&sys, 0.001);
+
+    int last_index = sim.calculateFinalStateLastprivate();
+
+    EXPECT_EQ(last_index, -1);
 }
