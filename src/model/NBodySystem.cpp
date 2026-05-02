@@ -179,9 +179,11 @@ void NBodySystem::computeAccelerationsParallelSimple()
      *
      * Por eso no se requiere atomic ni critical aquí.
      */
-    #pragma omp parallel for shared(bodies_)
+    std::pair<double, double> acc;
+
+    #pragma omp parallel for shared(bodies_) private(acc)
     for (int i = 0; i < N; ++i) {
-        const auto acc = computeAccelerationForBody(bodies_, i, G_, eps2);
+        acc = computeAccelerationForBody(bodies_, i, G_, eps2);
         bodies_[i].setAcceleration(acc.first, acc.second);
     }
 }
@@ -204,6 +206,7 @@ void NBodySystem::computeAccelerations(int schedule_type, int chunk_size)
 
     const int N = getCount();
     const double eps2 = epsilon_ * epsilon_;
+    std::pair<double, double> acc;
 
     /*
      * Las tres ramas tienen pragmas distintos porque OpenMP necesita
@@ -212,25 +215,25 @@ void NBodySystem::computeAccelerations(int schedule_type, int chunk_size)
      */
     if (schedule_type == 0) {
         // schedule(static, chunk_size)
-        #pragma omp parallel for schedule(static, chunk_size) shared(bodies_)
+        #pragma omp parallel for schedule(static, chunk_size) shared(bodies_) private(acc)
         for (int i = 0; i < N; ++i) {
-            const auto acc = computeAccelerationForBody(bodies_, i, G_, eps2);
+            acc = computeAccelerationForBody(bodies_, i, G_, eps2);
             bodies_[i].setAcceleration(acc.first, acc.second);
         }
 
     } else if (schedule_type == 1) {
         // schedule(dynamic, chunk_size)
-        #pragma omp parallel for schedule(dynamic, chunk_size) shared(bodies_)
+        #pragma omp parallel for schedule(dynamic, chunk_size) shared(bodies_) private(acc)
         for (int i = 0; i < N; ++i) {
-            const auto acc = computeAccelerationForBody(bodies_, i, G_, eps2);
+            acc = computeAccelerationForBody(bodies_, i, G_, eps2);
             bodies_[i].setAcceleration(acc.first, acc.second);
         }
 
     } else {
         // schedule(guided, chunk_size)
-        #pragma omp parallel for schedule(guided, chunk_size) shared(bodies_)
+        #pragma omp parallel for schedule(guided, chunk_size) shared(bodies_) private(acc)
         for (int i = 0; i < N; ++i) {
-            const auto acc = computeAccelerationForBody(bodies_, i, G_, eps2);
+            acc = computeAccelerationForBody(bodies_, i, G_, eps2);
             bodies_[i].setAcceleration(acc.first, acc.second);
         }
     }
