@@ -445,17 +445,18 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
         throw std::invalid_argument(
             "NBodySimulator::processBodies: task_type inválido.");
     }
-    
+
     auto& bodies = system_->getBodies();
     const int N = system_->getCount();
 
+    // Métrica auxiliar por cuerpo: distancia al origen.
+    // Se usa para que task y parallel for realicen el mismo trabajo medible.
+    std::vector<double> radii(N, 0.0);
+
     if (task_type == 0) {
-        // --------------------------------------------------------
-        // task: procesamiento por bloques de índices
-        // --------------------------------------------------------
         const int block_size = 16;
 
-        #pragma omp parallel shared(bodies)
+        #pragma omp parallel shared(bodies, radii)
         {
             if (use_single) {
                 #pragma omp single
@@ -463,12 +464,12 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
                     for (int begin = 0; begin < N; begin += block_size) {
                         int end = std::min(begin + block_size, N);
 
-                        #pragma omp task firstprivate(begin, end)
+                        #pragma omp task firstprivate(begin, end) shared(bodies, radii)
                         {
                             for (int i = begin; i < end; ++i) {
                                 double x = bodies[i].getX();
                                 double y = bodies[i].getY();
-                                bodies[i].setPosition(x, y);
+                                radii[i] = std::sqrt(x * x + y * y);
                             }
                         }
                     }
@@ -481,12 +482,12 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
                     for (int begin = 0; begin < N; begin += block_size) {
                         int end = std::min(begin + block_size, N);
 
-                        #pragma omp task firstprivate(begin, end)
+                        #pragma omp task firstprivate(begin, end) shared(bodies, radii)
                         {
                             for (int i = begin; i < end; ++i) {
                                 double x = bodies[i].getX();
                                 double y = bodies[i].getY();
-                                bodies[i].setPosition(x, y);
+                                radii[i] = std::sqrt(x * x + y * y);
                             }
                         }
                     }
@@ -497,16 +498,21 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
         }
 
     } else {
-        // --------------------------------------------------------
-        // parallel for: mismo reparto sobre índices, sin tareas
-        // --------------------------------------------------------
-        #pragma omp parallel for
+        #pragma omp parallel for shared(bodies, radii)
         for (int i = 0; i < N; ++i) {
             double x = bodies[i].getX();
             double y = bodies[i].getY();
-            bodies[i].setPosition(x, y);
+            radii[i] = std::sqrt(x * x + y * y);
         }
     }
+
+    // Evita warning si el compilador detecta que radii solo se usa internamente.
+    // Además fuerza una lectura final de la métrica calculada.
+    double checksum = 0.0;
+    for (double r : radii) {
+        checksum += r;
+    }
+    (void)checksum;
 }
 
 // ----------------------------------------------------------------

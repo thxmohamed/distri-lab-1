@@ -20,6 +20,8 @@
 // - Ejecución coherente de integrateEuler instrumentado
 // - Ejecución de rutas OpenMP: task, single, master, barrier,
 //   firstprivate, lastprivate y parallel for
+// - Cálculo auxiliar por cuerpo en processBodies para comparar
+//   task vs parallel for
 // ============================================================
 
 // ------------------------------------------------------------
