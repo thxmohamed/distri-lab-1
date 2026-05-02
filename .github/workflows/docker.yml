@@ -23,11 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Pasa el nombre del repositorio a minúsculas, define la ruta de la imagen y la guarda en el env de GitHub Actions para usarla en los siguientes pasos
+      # Pasa el nombre del repositorio a minúsculas y define la ruta de la imagen como output del step
       - name: Image name
+        id: vars
         run: |
           repo_lc=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE=ghcr.io/${repo_lc}:base" >> "$GITHUB_ENV"
+          echo "image=ghcr.io/${repo_lc}:base" >> "$GITHUB_OUTPUT"
 
       # Entra al registro de contenedores del repositorio
       - name: Log in to GHCR
@@ -37,10 +38,10 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Construye la imagen y la sube al registro de contenedores en la ruta definida en el env
+      # Construye la imagen y la sube al registro de contenedores en la ruta definida en el output del step vars
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE }}
+          tags: ${{ steps.vars.outputs.image }}

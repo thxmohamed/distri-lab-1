@@ -13,38 +13,9 @@ env:
 
 # Flujo de trabajo
 jobs:
-  # Primero se verifica que la imagen se encuentre en el GHCR
-  ensure-image:
-    name: Verify base image exists in GHCR
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: read
-
-    steps:
-      - name: Image name
-        run: |
-          repo_lc=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE=ghcr.io/${repo_lc}:base" >> "$GITHUB_ENV"
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull base image
-        run: |
-          if ! docker pull ${{ env.IMAGE }}; then
-            echo "::error::Imagen no encontrada en GHCR. Ejecuta el workflow docker.yml primero."
-            exit 1
-          fi
-
   compile-and-test:
     # Nombre del trabajo
     name: Compile and Test
-    needs: ensure-image
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -56,9 +27,10 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Image name
+        id: vars
         run: |
           repo_lc=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE=ghcr.io/${repo_lc}:base" >> "$GITHUB_ENV"
+          echo "image=ghcr.io/${repo_lc}:base" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -67,16 +39,24 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull image
-        run: docker pull ${{ env.IMAGE }}
+      # Intenta usar la imagen publicada en GHCR para aprovechar la caché.
+      # Si no existe (primer push, fork sin imagen publicada, etc.), construye localmente desde el Dockerfile.
+      - name: Pull or build base image
+        run: |
+          if docker pull ${{ steps.vars.outputs.image }}; then
+            echo "Imagen obtenida desde GHCR."
+          else
+            echo "Imagen no encontrada en GHCR. Construyendo localmente desde el Dockerfile..."
+            docker build -t ${{ steps.vars.outputs.image }} .
+          fi
 
       # Verifica que la imagen se ha construido correctamente ejecutando el comando g++ --version para ver si se instalo el compilador de C++
       # "-v ${{ github.workspace }}:/app" monta el directorio con la última versión del código en el contenedor
       - name: Verify toolchain
-        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ env.IMAGE }} g++ --version
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ steps.vars.outputs.image }} g++ --version
 
       - name: Build project
-        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ env.IMAGE }} make
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ steps.vars.outputs.image }} make
 
       - name: Run tests
-        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ env.IMAGE }} make test
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app ${{ steps.vars.outputs.image }} make test
