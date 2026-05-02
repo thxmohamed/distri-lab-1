@@ -11,6 +11,7 @@
 # Benchmark / analysis outputs
 *.dat
 *.png
+output/
 
 # OS/editor noise
 .DS_Store

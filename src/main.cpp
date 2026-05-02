@@ -7,6 +7,8 @@
 #include "NBodySystem.h"
 #include "NBodySimulator.h"
 #include "Benchmark.h"
+#include "MetricsCalculator.h"
+#include "Visualizer.h"
 
 int main(int argc, char** argv) {
     if (argc > 1) {
@@ -186,7 +188,38 @@ int main(int argc, char** argv) {
         }
 
         if (arg == "--analysis") {
-            std::cout << "Modo analysis aun no implementado.\n";
+            const int    N     = 50;
+            const int    steps = 200;
+            const double dt    = 0.001;
+
+            NBodySystem sys(1.0, 0.05);
+            sys.initBinary(N, 42);
+
+            NBodySimulator sim(&sys, dt);
+            Visualizer viz("energy_timeseries.dat", "snapshots.dat", "global_metrics.dat");
+
+            for (int s = 0; s < steps; s++) {
+                double t = s * dt;
+
+                double K = MetricsCalculator::kineticEnergy(sys);
+                double U = MetricsCalculator::potentialEnergy(sys);
+                viz.recordEnergy(t, K, U);
+
+                viz.recordMetrics(t,
+                    MetricsCalculator::centerOfMassX(sys),
+                    MetricsCalculator::centerOfMassY(sys),
+                    MetricsCalculator::rmsRadius(sys));
+
+                if (s % 5 == 0)
+                    viz.recordSnapshot(t, sys);
+
+                sim.integrateEuler();
+            }
+
+            std::cout << "Archivos generados:\n";
+            std::cout << " - energy_timeseries.dat\n";
+            std::cout << " - snapshots.dat\n";
+            std::cout << " - global_metrics.dat\n";
             return 0;
         }
     }

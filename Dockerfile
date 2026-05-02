@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y \
     libomp-dev \
     libgtest-dev \
     cmake \
+    python3 \
+    python3-numpy \
+    python3-matplotlib \
     && cmake -S /usr/src/googletest -B /tmp/gtest-build \
     && cmake --build /tmp/gtest-build \
     && cmake --install /tmp/gtest-build \

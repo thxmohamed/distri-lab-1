@@ -19,7 +19,9 @@ SOURCES := \
 	src/model/NBodySystem.cpp \
 	src/simulation/Integrator.cpp \
 	src/simulation/NBodySimulator.cpp \
-	benchmarks/Benchmark.cpp
+	src/Visualizer.cpp \
+	benchmarks/Benchmark.cpp \
+	benchmarks/MetricsCalculator.cpp
 	
 UNIT_SOURCES      := $(wildcard tests/unit/*.cpp)
 INTEGRATION_SOURCES := $(wildcard tests/integration/*.cpp)
@@ -29,7 +31,7 @@ TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp src/simula
 OBJECTS := $(SOURCES:.cpp=.o)
 
 # Indica nombres que no corresponden a archivos reales, sino a tareas o comandos que Make debe ejecutar
-.PHONY: all clean benchmark analysis test
+.PHONY: all clean benchmark analysis test plots
 
 all: $(TARGET_BIN)
 
@@ -43,7 +45,8 @@ $(TARGET_BIN): $(OBJECTS)
 
 # Borra los archivos generados por la compilación
 clean:
-	rm -f $(TARGET_BIN) $(OBJECTS) run_unit run_integration *.o *.dat *.png
+	rm -f $(TARGET_BIN) $(OBJECTS) run_unit run_integration *.o *.dat
+	rm -rf output/
 
 benchmark: $(TARGET_BIN)
 	./$(TARGET_BIN) --benchmark
@@ -56,3 +59,11 @@ test:
 	$(CXX) $(CXXFLAGS) -o run_integration $(INTEGRATION_SOURCES) $(TEST_LIB) $(LDFLAGS) -lgtest -lpthread
 	./run_unit
 	./run_integration
+
+plots:
+	mkdir -p output
+	python3 scripts/plot_performance.py
+	python3 scripts/plot_schedule.py
+	python3 scripts/plot_amdahl.py
+	python3 scripts/plot_trajectories.py
+	python3 scripts/plot_energy.py
