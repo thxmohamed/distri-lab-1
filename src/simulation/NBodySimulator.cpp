@@ -90,9 +90,16 @@ void NBodySimulator::integrateEuler(int sync_type) {
 // ----------------------------------------------------------------
 // (3) Variante instrumentada con sync_type + barrier
 //     sync_type:
-//       0 = atomic
-//       1 = critical
-//       2 = nowait
+//       0 = atomic   sobre la métrica auxiliar
+//       1 = critical sobre la métrica auxiliar
+//       2 = variante enfocada en nowait, sin métrica auxiliar
+//
+//     En las tres variantes se usa nowait en el primer omp for
+//     para eliminar la barrera implícita. Luego use_barrier decide
+//     si se agrega una barrera explícita entre kick y drift.
+//
+//     Si use_barrier = false, no debe usarse para resultados físicos
+//     finales, ya que puede romper el orden del integrador de Euler.
 // ----------------------------------------------------------------
 void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
     if (sync_type < 0 || sync_type > 2) {
@@ -119,7 +126,7 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
 
         #pragma omp parallel shared(bodies, displacement_sum)
         {
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < N; ++i)
                 bodies[i].kick(time_step_);
 
@@ -152,7 +159,7 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
 
         #pragma omp parallel shared(bodies, displacement_sum)
         {
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < N; ++i)
                 bodies[i].kick(time_step_);
 
@@ -181,9 +188,8 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
     } else {
         // --------------------------------------------------------
         // nowait:
-        // Variante experimental para demostrar la cláusula nowait.
-        // Si use_barrier = false, no debe usarse para resultados físicos finales,
-        // porque puede permitir drift antes de que todos los cuerpos terminen kick.
+        // Variante experimental sin métrica auxiliar.
+        // Sirve para demostrar el efecto de omitir o agregar barrera entre fases.
         // --------------------------------------------------------
         #pragma omp parallel shared(bodies)
         {
