@@ -67,3 +67,5 @@ plots:
 	python3 scripts/plot_amdahl.py
 	python3 scripts/plot_trajectories.py
 	python3 scripts/plot_energy.py
+	python3 scripts/plot_physics.py
+	python3 scripts/plot_energy_drift.py

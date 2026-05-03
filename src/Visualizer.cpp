@@ -19,7 +19,7 @@ Visualizer::Visualizer(const std::string& energy_file,
 
     energy_    << "# t K U E\n";
     snapshots_ << "# t x y\n";
-    metrics_   << "# t Rcm_x Rcm_y RMS\n";
+    metrics_   << "# t Rcm_x Rcm_y RMS momentum d_min\n";
 }
 
 void Visualizer::recordEnergy(double t, double K, double U) {
@@ -34,7 +34,13 @@ void Visualizer::recordSnapshot(double t, const NBodySystem& sys) {
     }
 }
 
-void Visualizer::recordMetrics(double t, double Rcm_x, double Rcm_y, double RMS) {
+void Visualizer::recordMetrics(double t, double Rcm_x, double Rcm_y, double RMS,
+                               double momentum, double d_min) {
     metrics_ << std::scientific << std::setprecision(8)
-             << t << " " << Rcm_x << " " << Rcm_y << " " << RMS << "\n";
+             << t       << " "
+             << Rcm_x   << " "
+             << Rcm_y   << " "
+             << RMS      << " "
+             << momentum << " "
+             << d_min    << "\n";
 }

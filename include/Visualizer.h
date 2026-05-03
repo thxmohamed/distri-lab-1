@@ -21,6 +21,7 @@ public:
     /** Escribe una fila por partícula: t x y */
     void recordSnapshot(double t, const NBodySystem& sys);
 
-    /** Escribe una fila: t Rcm_x Rcm_y RMS */
-    void recordMetrics(double t, double Rcm_x, double Rcm_y, double RMS);
+    /** Escribe una fila: t Rcm_x Rcm_y RMS momentum d_min */
+    void recordMetrics(double t, double Rcm_x, double Rcm_y, double RMS,
+                       double momentum, double d_min);
 };

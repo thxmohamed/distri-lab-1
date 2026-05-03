@@ -1,7 +1,9 @@
 #include <iostream>
 #include <fstream>
+#include <iomanip>
 #include <string>
 #include <vector>
+#include <cmath>
 #include <omp.h>
 
 #include "NBodySystem.h"
@@ -208,7 +210,9 @@ int main(int argc, char** argv) {
                 viz.recordMetrics(t,
                     MetricsCalculator::centerOfMassX(sys),
                     MetricsCalculator::centerOfMassY(sys),
-                    MetricsCalculator::rmsRadius(sys));
+                    MetricsCalculator::rmsRadius(sys),
+                    MetricsCalculator::momentum(sys),
+                    MetricsCalculator::minPairDistance(sys));
 
                 if (s % 5 == 0)
                     viz.recordSnapshot(t, sys);
@@ -216,10 +220,50 @@ int main(int argc, char** argv) {
                 sim.integrateEuler();
             }
 
+            // =====================================================
+            // Comparación de deriva energética para distintos Δt
+            // t_fin_drift independiente (más largo) para ver diferencias
+            // dt=0.010 explota en 1-2 pasos con M_big=1000 (T_orb≈0.07)
+            // Se usan valores estables: 0.001, 0.0005, 0.0001
+            // =====================================================
+            const double t_fin_drift = 2.0;
+            struct DtConfig { double dt; const char* filename; };
+            DtConfig dt_configs[] = {
+                {0.001,  "energy_drift_dt001.dat"},
+                {0.0005, "energy_drift_dt0005.dat"},
+                {0.0001, "energy_drift_dt0001.dat"}
+            };
+
+            for (auto& cfg : dt_configs) {
+                NBodySystem sys_dt(1.0, 0.05);
+                sys_dt.initBinary(N, 42);
+
+                NBodySimulator sim_dt(&sys_dt, cfg.dt);
+
+                double E0 = MetricsCalculator::totalEnergy(sys_dt);
+
+                std::ofstream drift_out(cfg.filename);
+                drift_out << "# t E_rel  (dt=" << cfg.dt << ")\n";
+                drift_out << std::scientific << std::setprecision(8);
+
+                int n_steps = static_cast<int>(std::round(t_fin_drift / cfg.dt));
+                for (int s = 0; s <= n_steps; s++) {
+                    double t_s = s * cfg.dt;
+                    double E   = MetricsCalculator::totalEnergy(sys_dt);
+                    double E_rel = (E0 != 0.0) ? std::abs(E - E0) / std::abs(E0) : 0.0;
+                    drift_out << t_s << " " << E_rel << "\n";
+                    if (s < n_steps)
+                        sim_dt.integrateEuler();
+                }
+            }
+
             std::cout << "Archivos generados:\n";
             std::cout << " - energy_timeseries.dat\n";
             std::cout << " - snapshots.dat\n";
             std::cout << " - global_metrics.dat\n";
+            std::cout << " - energy_drift_dt001.dat\n";
+            std::cout << " - energy_drift_dt0005.dat\n";
+            std::cout << " - energy_drift_dt0001.dat\n";
             return 0;
         }
     }

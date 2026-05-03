@@ -87,7 +87,7 @@ Todos los comandos se ejecutan desde la raíz del proyecto. El compilador requie
 - `make` — compila el ejecutable principal
 - `make test` — compila y ejecuta las pruebas unitarias e integración
 - `make benchmark` — ejecuta los benchmarks de rendimiento y genera los `.dat` de escalabilidad
-- `make analysis` — ejecuta la simulación física y genera los `.dat` de energía y trayectorias
+- `make analysis` — ejecuta la simulación física y genera los `.dat` de energía, trayectorias y métricas globales
 - `make plots` — genera los gráficos `.png` a partir de los `.dat` (requiere `make benchmark` y `make analysis` previos)
 - `make clean` — elimina los ejecutables, objetos y archivos generados
 
@@ -118,3 +118,31 @@ Los experimentos utilizan los siguientes parámetros por defecto:
 
 - **Benchmark** — N = 2000, 500 pasos, 10 repeticiones, inicialización binaria, semilla 42, Δt = 0.001
 - **Analysis** — N = 50, 200 pasos, inicialización binaria, semilla 42, Δt = 0.001
+
+### Archivos de salida
+
+`make benchmark` genera:
+
+- `benchmark_results.dat` — speedup y eficiencia de la simulación completa vs. número de hilos
+- `accelerations_results.dat` — speedup y eficiencia solo de `computeAccelerations` vs. número de hilos
+- `schedule_results.dat` — tiempo vs. chunk para schedules static, dynamic y guided
+- `scaling_analysis.dat` — speedup medido y predicción de Amdahl
+
+`make analysis` genera:
+
+- `energy_timeseries.dat` — K(t), U(t), E(t) para Δt = 0.001
+- `snapshots.dat` — posiciones (x, y) de todas las partículas cada 5 pasos
+- `global_metrics.dat` — Rcm_x(t), Rcm_y(t), RMS(t), momento lineal ‖P‖(t), distancia mínima entre pares d_min(t)
+- `energy_drift_dt01.dat` — deriva relativa de energía |ΔE/E₀| para Δt = 0.010
+- `energy_drift_dt001.dat` — deriva relativa de energía |ΔE/E₀| para Δt = 0.001
+- `energy_drift_dt0001.dat` — deriva relativa de energía |ΔE/E₀| para Δt = 0.0001
+
+`make plots` genera los siguientes PNG en `output/`:
+
+- `performance_plots.png` — speedup y eficiencia vs. hilos (simulación y aceleraciones)
+- `schedule_plots.png` — tiempo vs. chunk para distintos schedules
+- `amdahl_plot.png` — curva de Amdahl teórica vs. medida
+- `trajectories_plot.png` — snapshot final de posiciones, RMS(t) y centro de masa vs. tiempo
+- `energy_plot.png` — K(t), U(t), E(t)
+- `physics_plot.png` — momento lineal ‖P‖(t) y distancia mínima entre pares d_min(t)
+- `energy_drift_plot.png` — deriva relativa de energía para Δt = 0.010, 0.001 y 0.0001
