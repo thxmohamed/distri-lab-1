@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 
 # energy_drift_dtXXX.dat: t E_rel  (generados por --analysis)
 configs = [
-    ('energy_drift_dt001.dat',   r'$\Delta t = 0.001$'),
-    ('energy_drift_dt0005.dat',  r'$\Delta t = 0.0005$'),
-    ('energy_drift_dt0001.dat',  r'$\Delta t = 0.0001$'),
+    ('energy_drift_dt05.dat',   r'$\Delta t = 0.05$  (T/20)'),
+    ('energy_drift_dt01.dat',   r'$\Delta t = 0.01$  (T/100)'),
+    ('energy_drift_dt002.dat',  r'$\Delta t = 0.002$ (T/500)'),
 ]
 
 fig, ax = plt.subplots(figsize=(7, 4))
@@ -18,7 +18,7 @@ for filename, label in configs:
 
 ax.set_xlabel('t')
 ax.set_ylabel('$|E(t) - E(0)| / |E(0)|$')
-ax.set_title('Deriva de energía total (Euler explícito)')
+ax.set_title('Deriva de energía — binario circular (Euler explícito)')
 ax.set_yscale('log')
 ax.legend()
 plt.tight_layout()

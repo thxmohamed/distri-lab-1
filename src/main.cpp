@@ -222,21 +222,26 @@ int main(int argc, char** argv) {
 
             // =====================================================
             // Comparación de deriva energética para distintos Δt
-            // t_fin_drift independiente (más largo) para ver diferencias
-            // dt=0.010 explota en 1-2 pasos con M_big=1000 (T_orb≈0.07)
-            // Se usan valores estables: 0.001, 0.0005, 0.0001
+            // Sistema: binario circular estable (2 cuerpos, M=20, d=1)
+            //   v_circ = sqrt(G*M / (2*d)) = sqrt(10) ≈ 3.162
+            //   T_orb  ≈ π / sqrt(10)      ≈ 0.993 ≈ 1.0
+            // dt elegidos como fracciones del período: T/20, T/100, T/500
             // =====================================================
-            const double t_fin_drift = 2.0;
+            const double t_fin_drift = 5.0;
+            const double M_orb = 20.0;
+            const double v_orb = std::sqrt(M_orb / 2.0);
+
             struct DtConfig { double dt; const char* filename; };
             DtConfig dt_configs[] = {
-                {0.001,  "energy_drift_dt001.dat"},
-                {0.0005, "energy_drift_dt0005.dat"},
-                {0.0001, "energy_drift_dt0001.dat"}
+                {0.05,  "energy_drift_dt05.dat"},
+                {0.01,  "energy_drift_dt01.dat"},
+                {0.002, "energy_drift_dt002.dat"}
             };
 
             for (auto& cfg : dt_configs) {
                 NBodySystem sys_dt(1.0, 0.05);
-                sys_dt.initBinary(N, 42);
+                sys_dt.addParticle(Particle(M_orb,  0.5, 0.0, 0.0,  v_orb));
+                sys_dt.addParticle(Particle(M_orb, -0.5, 0.0, 0.0, -v_orb));
 
                 NBodySimulator sim_dt(&sys_dt, cfg.dt);
 
@@ -261,9 +266,9 @@ int main(int argc, char** argv) {
             std::cout << " - energy_timeseries.dat\n";
             std::cout << " - snapshots.dat\n";
             std::cout << " - global_metrics.dat\n";
-            std::cout << " - energy_drift_dt001.dat\n";
-            std::cout << " - energy_drift_dt0005.dat\n";
-            std::cout << " - energy_drift_dt0001.dat\n";
+            std::cout << " - energy_drift_dt05.dat\n";
+            std::cout << " - energy_drift_dt01.dat\n";
+            std::cout << " - energy_drift_dt002.dat\n";
             return 0;
         }
     }
