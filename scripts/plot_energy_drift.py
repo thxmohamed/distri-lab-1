@@ -17,7 +17,7 @@ for filename, label in configs:
     ax.plot(t, E_rel, label=label)
 
 ax.set_xlabel('t')
-ax.set_ylabel('$|E(t) - E(0)| / |E(0)|$')
+ax.set_ylabel('$\\max_{s \\leq t}\\, |E(s) - E(0)| / |E(0)|$')
 ax.set_title('Deriva de energía — binario circular (Euler explícito)')
 ax.set_yscale('log')
 ax.legend()
