@@ -354,12 +354,15 @@ void NBodySystem::initBinary(int N, unsigned int seed)
     /*
      * Sistema binario simple:
      * dos masas dominantes simétricas en el eje x y velocidades opuestas.
+     * La velocidad se calcula como una aproximación orbital para evitar
+     * una caída directa demasiado rápida entre las masas principales.
      */
-    const double M_big = 1.0e3;
+    const double M_big = 20.0;
     const double sep   = 1.0;
+    const double v_orb = std::sqrt((G_ * M_big) / (2.0 * sep));
 
-    bodies_.emplace_back(M_big,  sep * 0.5, 0.0, 0.0,  0.5);
-    bodies_.emplace_back(M_big, -sep * 0.5, 0.0, 0.0, -0.5);
+    bodies_.emplace_back(M_big,  sep * 0.5, 0.0, 0.0,  v_orb);
+    bodies_.emplace_back(M_big, -sep * 0.5, 0.0, 0.0, -v_orb);
 
     const double m_light = 1.0;
 
