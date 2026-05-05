@@ -43,10 +43,9 @@ int main(int argc, char** argv) {
                 }
 
                 double Sp = Benchmark::speedup(T1_sim, result.mean);
-                double sigmaSp = Benchmark::speedupError(
-                    T1_sim, sigma_T1_sim,
-                    result.mean, result.stddev
-                );
+                double sigmaSp = (threads == 1)
+                    ? 0.0
+                    : Benchmark::speedupError(T1_sim, sigma_T1_sim, result.mean, result.stddev);
 
                 double Ep = Benchmark::efficiency(Sp, threads);
                 double sigmaEp = Benchmark::efficiencyError(sigmaSp, threads);
@@ -61,10 +60,8 @@ int main(int argc, char** argv) {
 
                 std::cout << "[simulate] Threads: " << threads
                           << " | Mean: " << result.mean
-                          << " | Speedup: " << Sp
-                          << " ± " << sigmaSp
-                          << " | Efficiency: " << Ep
-                          << " ± " << sigmaEp
+                          << " | Speedup: " << Sp << " ± " << sigmaSp
+                          << " | Efficiency: " << Ep << " ± " << sigmaEp
                           << std::endl;
             }
 
@@ -76,7 +73,7 @@ int main(int argc, char** argv) {
             std::ofstream acc_out("accelerations_results.dat");
             acc_out << "# threads mean stddev speedup speedup_error efficiency efficiency_error\n";
 
-            int schedule_type = 0; // static
+            int schedule_type = 0; // 0=static
             int chunk_size = 32;
 
             double T1_acc = 0.0;
@@ -97,10 +94,9 @@ int main(int argc, char** argv) {
                 }
 
                 double Sp = Benchmark::speedup(T1_acc, result.mean);
-                double sigmaSp = Benchmark::speedupError(
-                    T1_acc, sigma_T1_acc,
-                    result.mean, result.stddev
-                );
+                double sigmaSp = (threads == 1)
+                    ? 0.0
+                    : Benchmark::speedupError(T1_acc, sigma_T1_acc, result.mean, result.stddev);
 
                 double Ep = Benchmark::efficiency(Sp, threads);
                 double sigmaEp = Benchmark::efficiencyError(sigmaSp, threads);
@@ -117,17 +113,15 @@ int main(int argc, char** argv) {
 
                 std::cout << "[accelerations] Threads: " << threads
                           << " | Mean: " << result.mean
-                          << " | Speedup: " << Sp
-                          << " ± " << sigmaSp
-                          << " | Efficiency: " << Ep
-                          << " ± " << sigmaEp
+                          << " | Speedup: " << Sp << " ± " << sigmaSp
+                          << " | Efficiency: " << Ep << " ± " << sigmaEp
                           << std::endl;
             }
 
             acc_out.close();
 
             // =====================================================
-            // 3) Comparacion de schedules
+            // 3) Comparacion de schedules y chunks
             // schedule_type: 0=static, 1=dynamic, 2=guided
             // =====================================================
             std::ofstream sched_out("schedule_results.dat");
@@ -159,7 +153,6 @@ int main(int argc, char** argv) {
 
             // =====================================================
             // 4) Analisis de Amdahl
-            // Usamos el speedup de 8 hilos para estimar f
             // =====================================================
             std::ofstream amdahl_out("scaling_analysis.dat");
             amdahl_out << "# threads measured_speedup estimated_f amdahl_prediction\n";
@@ -180,11 +173,86 @@ int main(int argc, char** argv) {
 
             amdahl_out.close();
 
+            // =====================================================
+            // 5) Sincronizacion basica
+            // variant: 0=atomic, 1=critical, 2=reduce
+            // =====================================================
+            std::ofstream sync_out("sync_results.dat");
+            sync_out << "# variant mean stddev\n";
+
+            for (int variant = 0; variant < 3; variant++) {
+                Result result = Benchmark::measureSyncVariant(
+                    N, steps, reps, variant
+                );
+
+                sync_out << variant << " "
+                         << result.mean << " "
+                         << result.stddev << "\n";
+
+                std::cout << "[sync] variant=" << variant
+                          << " | Mean: " << result.mean
+                          << " | Stddev: " << result.stddev
+                          << std::endl;
+            }
+
+            sync_out.close();
+
+            // =====================================================
+            // 6) Clausulas de datos
+            // variant: 0=private, 1=firstprivate, 2=lastprivate
+            // =====================================================
+            std::ofstream data_out("data_clauses_results.dat");
+            data_out << "# variant mean stddev\n";
+
+            for (int variant = 0; variant < 3; variant++) {
+                Result result = Benchmark::measureDataVariant(
+                    N, reps, variant
+                );
+
+                data_out << variant << " "
+                         << result.mean << " "
+                         << result.stddev << "\n";
+
+                std::cout << "[data] variant=" << variant
+                          << " | Mean: " << result.mean
+                          << " | Stddev: " << result.stddev
+                          << std::endl;
+            }
+
+            data_out.close();
+
+            // =====================================================
+            // 7) Sincronizacion avanzada
+            // variant: 0=barrier, 1=nowait, 2=task+single, 3=parallel for
+            // =====================================================
+            std::ofstream adv_out("advanced_sync_results.dat");
+            adv_out << "# variant mean stddev\n";
+
+            for (int variant = 0; variant < 4; variant++) {
+                Result result = Benchmark::measureAdvancedSyncVariant(
+                    N, steps, reps, variant
+                );
+
+                adv_out << variant << " "
+                        << result.mean << " "
+                        << result.stddev << "\n";
+
+                std::cout << "[advanced_sync] variant=" << variant
+                          << " | Mean: " << result.mean
+                          << " | Stddev: " << result.stddev
+                          << std::endl;
+            }
+
+            adv_out.close();
+
             std::cout << "\nArchivos generados:\n";
             std::cout << " - benchmark_results.dat\n";
             std::cout << " - accelerations_results.dat\n";
             std::cout << " - schedule_results.dat\n";
             std::cout << " - scaling_analysis.dat\n";
+            std::cout << " - sync_results.dat\n";
+            std::cout << " - data_clauses_results.dat\n";
+            std::cout << " - advanced_sync_results.dat\n";
 
             return 0;
         }
@@ -205,33 +273,37 @@ int main(int argc, char** argv) {
 
                 double K = MetricsCalculator::kineticEnergy(sys);
                 double U = MetricsCalculator::potentialEnergy(sys);
+
                 viz.recordEnergy(t, K, U);
 
-                viz.recordMetrics(t,
+                viz.recordMetrics(
+                    t,
                     MetricsCalculator::centerOfMassX(sys),
                     MetricsCalculator::centerOfMassY(sys),
                     MetricsCalculator::rmsRadius(sys),
                     MetricsCalculator::momentum(sys),
-                    MetricsCalculator::minPairDistance(sys));
+                    MetricsCalculator::minPairDistance(sys)
+                );
 
-                if (s % 5 == 0)
+                if (s % 5 == 0) {
                     viz.recordSnapshot(t, sys);
+                }
 
                 sim.integrateEuler();
             }
 
             // =====================================================
-            // Comparación de deriva energética para distintos Δt
-            // Sistema: binario circular estable (2 cuerpos, M=20, d=1)
-            //   v_circ = sqrt(G*M / (2*d)) = sqrt(10) ≈ 3.162
-            //   T_orb  ≈ π / sqrt(10)      ≈ 0.993 ≈ 1.0
-            // dt elegidos como fracciones del período: T/20, T/100, T/500
+            // Deriva energetica para distintos dt
             // =====================================================
             const double t_fin_drift = 5.0;
             const double M_orb = 20.0;
             const double v_orb = std::sqrt(M_orb / 2.0);
 
-            struct DtConfig { double dt; const char* filename; };
+            struct DtConfig {
+                double dt;
+                const char* filename;
+            };
+
             DtConfig dt_configs[] = {
                 {0.05,  "energy_drift_dt05.dat"},
                 {0.01,  "energy_drift_dt01.dat"},
@@ -240,6 +312,7 @@ int main(int argc, char** argv) {
 
             for (auto& cfg : dt_configs) {
                 NBodySystem sys_dt(1.0, 0.05);
+
                 sys_dt.addParticle(Particle(M_orb,  0.5, 0.0, 0.0,  v_orb));
                 sys_dt.addParticle(Particle(M_orb, -0.5, 0.0, 0.0, -v_orb));
 
@@ -248,20 +321,34 @@ int main(int argc, char** argv) {
                 double E0 = MetricsCalculator::totalEnergy(sys_dt);
 
                 std::ofstream drift_out(cfg.filename);
-                drift_out << "# t E_rel_max  (dt=" << cfg.dt << ")\n";
+                drift_out << "# t E_rel_max dt\n";
                 drift_out << std::scientific << std::setprecision(8);
 
                 int n_steps = static_cast<int>(std::round(t_fin_drift / cfg.dt));
                 double E_rel_max = 0.0;
+
                 for (int s = 0; s <= n_steps; s++) {
                     double t_s = s * cfg.dt;
-                    double E     = MetricsCalculator::totalEnergy(sys_dt);
-                    double E_rel = (E0 != 0.0) ? std::abs(E - E0) / std::abs(E0) : 0.0;
-                    if (E_rel > E_rel_max) E_rel_max = E_rel;
-                    drift_out << t_s << " " << E_rel_max << "\n";
-                    if (s < n_steps)
+
+                    double E = MetricsCalculator::totalEnergy(sys_dt);
+                    double E_rel = (E0 != 0.0)
+                        ? std::abs(E - E0) / std::abs(E0)
+                        : 0.0;
+
+                    if (E_rel > E_rel_max) {
+                        E_rel_max = E_rel;
+                    }
+
+                    drift_out << t_s << " "
+                              << E_rel_max << " "
+                              << cfg.dt << "\n";
+
+                    if (s < n_steps) {
                         sim_dt.integrateEuler();
+                    }
                 }
+
+                drift_out.close();
             }
 
             std::cout << "Archivos generados:\n";
@@ -271,6 +358,7 @@ int main(int argc, char** argv) {
             std::cout << " - energy_drift_dt05.dat\n";
             std::cout << " - energy_drift_dt01.dat\n";
             std::cout << " - energy_drift_dt002.dat\n";
+
             return 0;
         }
     }

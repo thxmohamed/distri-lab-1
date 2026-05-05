@@ -17,7 +17,7 @@ public:
     static double speedup(double T1, double Tp);
     static double efficiency(double Sp, int p);
 
-    // Nuevas funciones pedidas por el enunciado
+    // funciones pedidas por el enunciado
     static double speedupError(double T1, double sigmaT1,
                                double Tp, double sigmaTp);
 
@@ -25,4 +25,8 @@ public:
 
     static double amdahlSerialFraction(double Sp, int p);
     static double amdahlSpeedup(double f, int p);
+
+    static Result measureSyncVariant(int N, int steps, int reps, int variant);
+    static Result measureDataVariant(int N, int reps, int variant);
+    static Result measureAdvancedSyncVariant(int N, int steps, int reps, int variant);
 };

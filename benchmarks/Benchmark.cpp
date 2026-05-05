@@ -128,3 +128,76 @@ double Benchmark::amdahlSerialFraction(double Sp, int p) {
 double Benchmark::amdahlSpeedup(double f, int p) {
     return 1.0 / (f + (1.0 - f) / p);
 }
+
+Result Benchmark::measureSyncVariant(int N, int steps, int reps, int variant) {
+    std::vector<double> times;
+
+    for (int r = 0; r < reps; r++) {
+        NBodySystem system(1.0, 0.05);
+        system.initDisk(N, 1.0, 42);
+
+        NBodySimulator sim(&system, 0.01);
+
+        double start = omp_get_wtime();
+
+        for (int i = 0; i < steps; i++) {
+            if (variant == 0) sim.integrateEuler(0); // atomic
+            else if (variant == 1) sim.integrateEuler(1); // critical
+            else sim.calculateEnergy(0); // reduce
+        }
+
+        double end = omp_get_wtime();
+        times.push_back(end - start);
+    }
+
+    return calculateStats(times);
+}
+
+Result Benchmark::measureDataVariant(int N, int reps, int variant) {
+    std::vector<double> times;
+
+    for (int r = 0; r < reps; r++) {
+        NBodySystem system(1.0, 0.05);
+        system.initDisk(N, 1.0, 42);
+
+        NBodySimulator sim(&system, 0.01);
+
+        double start = omp_get_wtime();
+
+        if (variant == 0) sim.calculateEnergy(0, true); // private
+        else if (variant == 1) sim.calculateMetricsFirstprivate();
+        else sim.calculateFinalStateLastprivate();
+
+        double end = omp_get_wtime();
+
+        times.push_back(end - start);
+    }
+
+    return calculateStats(times);
+}
+
+Result Benchmark::measureAdvancedSyncVariant(int N, int steps, int reps, int variant) {
+    std::vector<double> times;
+
+    for (int r = 0; r < reps; r++) {
+        NBodySystem system(1.0, 0.05);
+        system.initDisk(N, 1.0, 42);
+
+        NBodySimulator sim(&system, 0.01);
+
+        double start = omp_get_wtime();
+
+        for (int i = 0; i < steps; i++) {
+            if (variant == 0) sim.integrateEuler(2, true); // barrier
+            else if (variant == 1) sim.integrateEuler(2, false); // nowait
+            else if (variant == 2) sim.processBodies(0, true); // task + single
+            else sim.processBodies(1); // parallel for
+        }
+
+        double end = omp_get_wtime();
+
+        times.push_back(end - start);
+    }
+
+    return calculateStats(times);
+}
