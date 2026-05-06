@@ -69,3 +69,4 @@ plots:
 	python3 scripts/plot_energy.py
 	python3 scripts/plot_physics.py
 	python3 scripts/plot_energy_drift.py
+	python3 scripts/plot_clauses.py

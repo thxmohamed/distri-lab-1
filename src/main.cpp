@@ -321,11 +321,10 @@ int main(int argc, char** argv) {
                 double E0 = MetricsCalculator::totalEnergy(sys_dt);
 
                 std::ofstream drift_out(cfg.filename);
-                drift_out << "# t E_rel_max dt\n";
+                drift_out << "# t E_rel dt\n";
                 drift_out << std::scientific << std::setprecision(8);
 
                 int n_steps = static_cast<int>(std::round(t_fin_drift / cfg.dt));
-                double E_rel_max = 0.0;
 
                 for (int s = 0; s <= n_steps; s++) {
                     double t_s = s * cfg.dt;
@@ -335,12 +334,8 @@ int main(int argc, char** argv) {
                         ? std::abs(E - E0) / std::abs(E0)
                         : 0.0;
 
-                    if (E_rel > E_rel_max) {
-                        E_rel_max = E_rel;
-                    }
-
                     drift_out << t_s << " "
-                              << E_rel_max << " "
+                              << E_rel << " "
                               << cfg.dt << "\n";
 
                     if (s < n_steps) {
