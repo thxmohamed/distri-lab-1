@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 
 snap    = np.loadtxt('snapshots.dat')
 metrics = np.loadtxt('global_metrics.dat')
@@ -13,16 +14,33 @@ cm_x   = metrics[:, 1]
 cm_y   = metrics[:, 2]
 rms    = metrics[:, 3]
 
-t_last = t_snap.max()
-mask   = t_snap == t_last
+times    = np.unique(t_snap)
+n_times  = len(times)
+n_bodies = np.sum(t_snap == times[0])
 
-fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(14, 4))
+xs = x.reshape(n_times, n_bodies)
+ys = y.reshape(n_times, n_bodies)
 
-ax1.scatter(x[mask], y[mask], s=4, alpha=0.7)
+cmap   = plt.get_cmap('tab20')
+colors = [cmap(i % 20) for i in range(n_bodies)]
+
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(16, 5))
+
+for i in range(n_bodies):
+    pts   = np.stack([xs[:, i], ys[:, i]], axis=1).reshape(-1, 1, 2)
+    segs  = np.concatenate([pts[:-1], pts[1:]], axis=1)
+    alphas = np.linspace(0.05, 0.8, len(segs))
+    lc = LineCollection(segs, color=colors[i], linewidths=0.8)
+    lc.set_alpha(alphas)
+    ax1.add_collection(lc)
+    ax1.scatter(xs[-1, i], ys[-1, i], color=colors[i], s=12, zorder=5)
+
+ax1.set_xlim(xs.min() - 0.1, xs.max() + 0.1)
+ax1.set_ylim(ys.min() - 0.1, ys.max() + 0.1)
+ax1.set_aspect('equal')
 ax1.set_xlabel('x')
 ax1.set_ylabel('y')
-ax1.set_title(f't = {t_last:.3f}')
-ax1.set_aspect('equal')
+ax1.set_title('Trayectorias N-body (estela temporal)')
 
 ax2.plot(t_met, rms)
 ax2.set_xlabel('t')

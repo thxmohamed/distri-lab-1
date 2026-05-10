@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
             int steps = 500;
             int reps = 10;
 
-            std::vector<int> threads_list = {1, 2, 4, 8};
+            std::vector<int> threads_list = {1, 2, 4, 8, 16, 24};
 
             // =====================================================
             // 1) Benchmark de simulacion completa
