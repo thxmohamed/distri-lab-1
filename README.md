@@ -114,14 +114,31 @@ make plots
 ### Entorno de ejecución
 
 Los benchmarks reportados en el informe se ejecutaron en un nodo GPU
-del clúster de la universidad, debido a la no disponibilidad de nodos
-CPU en el momento de la medición. El código utiliza OpenMP con
-`parallel for` estándar, por lo que la ejecución paralela se realizó
-sobre los núcleos CPU del nodo GPU. Los resultados son válidos como
-medición de rendimiento en CPU, aunque las características del
-procesador de este nodo pueden diferir de un nodo CPU dedicado,
-lo que podría explicar comportamientos atípicos observados en
-schedule(guided) con chunks grandes.
+del clúster de la universidad (AMD EPYC 7443P, 24 cores / 48 threads),
+debido a que los nodos CPU se encontraban en mantenimiento en el momento
+de la medición. El código utiliza OpenMP con `parallel for` estándar,
+por lo que la ejecución paralela se realizó sobre los núcleos CPU del
+nodo GPU. Los resultados son válidos como medición de rendimiento en CPU,
+aunque las características del procesador de este nodo pueden diferir de
+un nodo CPU dedicado, lo que podría explicar comportamientos atípicos
+observados en `schedule(guided)` con chunks grandes.
+
+El job fue encolado con SLURM mediante el siguiente script:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=nbody_benchmark
+#SBATCH --partition=GPU
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=24
+#SBATCH --time=01:00:00
+#SBATCH --output=benchmark_%j.out
+#SBATCH --error=benchmark_%j.err
+
+cd ~/distri-lab-1
+make benchmark
+```
 
 ### Parámetros de simulación
 
