@@ -157,8 +157,9 @@ int main(int argc, char** argv) {
             std::ofstream amdahl_out("scaling_analysis.dat");
             amdahl_out << "# threads measured_speedup estimated_f amdahl_prediction\n";
 
-            double S8 = acc_speedups.back();
-            double f_est = Benchmark::amdahlSerialFraction(S8, 8);
+            double S_last = acc_speedups.back();
+            int p_last = threads_list.back();
+            double f_est = Benchmark::amdahlSerialFraction(S_last, p_last);
 
             for (size_t i = 0; i < threads_list.size(); i++) {
                 int p = threads_list[i];
