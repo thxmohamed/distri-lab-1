@@ -13,6 +13,21 @@
 // Constructor
 // ================================================================
 
+/**
+ * ---------------------------------------------------------------
+ * NBodySimulator
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - sys: puntero al sistema NBodySystem que contiene las partículas.
+ *  - dt: paso temporal de integración.
+ *
+ * Salida:
+ *  - Construye una instancia de NBodySimulator con métricas inicializadas en cero.
+ *
+ * Descripción:
+ *  Inicializa el simulador, guarda la referencia al sistema físico y valida
+ *  que exista un sistema asociado y que el paso temporal sea positivo.
+ */
 NBodySimulator::NBodySimulator(NBodySystem* sys, double dt)
     : system_(sys)
     , time_step_(dt)
@@ -36,9 +51,22 @@ NBodySimulator::NBodySimulator(NBodySystem* sys, double dt)
 }
 
 
-// ----------------------------------------------------------------
-// Configura la estrategia de aceleraciones usada por integrateEuler
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * setAccelerationMode (use_parallel, schedule_type, chunk_size)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - use_parallel: indica si se usará cálculo paralelo de aceleraciones.
+ *  - schedule_type: tipo de schedule OpenMP, 0=static, 1=dynamic, 2=guided.
+ *  - chunk_size: tamaño de bloque usado por el schedule paralelo.
+ *
+ * Salida:
+ *  - No retorna valor. Actualiza la configuración interna del simulador.
+ *
+ * Descripción:
+ *  Define la estrategia de cálculo de aceleraciones que será usada por
+ *  integrateEuler(), validando previamente que los parámetros sean válidos.
+ */
 void NBodySimulator::setAccelerationMode(bool use_parallel, int schedule_type, int chunk_size) {
     if (chunk_size <= 0) {
         throw std::invalid_argument(
@@ -50,6 +78,7 @@ void NBodySimulator::setAccelerationMode(bool use_parallel, int schedule_type, i
             "NBodySimulator::setAccelerationMode: schedule_type inválido.");
     }
 
+    // La configuración queda guardada para los siguientes pasos de integración.
     use_parallel_accel_ = use_parallel;
     schedule_type_ = schedule_type;
     chunk_size_ = chunk_size;
@@ -59,11 +88,22 @@ void NBodySimulator::setAccelerationMode(bool use_parallel, int schedule_type, i
 // Integración temporal
 // ================================================================
 
-// ----------------------------------------------------------------
-// (1) Versión base
-//     Calcula aceleraciones y luego aplica Euler explícito
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * integrateEuler
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros directos. Usa la configuración interna del simulador.
+ *
+ * Salida:
+ *  - No retorna valor. Actualiza velocidades, posiciones y tiempo actual.
+ *
+ * Descripción:
+ *  Ejecuta un paso de Euler explícito: calcula aceleraciones, aplica kick,
+ *  aplica drift y aumenta current_time_ en time_step_.
+ */
 void NBodySimulator::integrateEuler() {
+    // Se calcula la aceleración antes de integrar, usando la estrategia configurada (paralela o serial).
     if (use_parallel_accel_) {
         system_->computeAccelerations(schedule_type_, chunk_size_);
     } else {
@@ -71,36 +111,51 @@ void NBodySimulator::integrateEuler() {
     }
 
     auto& bodies = system_->getBodies();
+
+    // Euler explícito separado en fases: primero velocidades, luego posiciones.
     Integrator::applyKick(bodies, time_step_);
     Integrator::applyDrift(bodies, time_step_);
 
+    // Se registra el avance temporal completado.
     current_time_ += time_step_;
 }
 
-// ----------------------------------------------------------------
-// (2) Variante instrumentada
-//     Delega en la versión con control explícito de barrier
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * integrateEuler (sync_type)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - sync_type: estrategia de sincronización a usar en la variante instrumentada.
+ *
+ * Salida:
+ *  - No retorna valor. Avanza el sistema un paso temporal.
+ *
+ * Descripción:
+ *  Sobrecarga simplificada que delega en integrateEuler(sync_type, true),
+ *  manteniendo por defecto una barrera explícita entre kick y drift.
+ */
 void NBodySimulator::integrateEuler(int sync_type) {
     // Por defecto se conserva el orden físico Euler:
     // aceleraciones -> kick -> drift.
     integrateEuler(sync_type, true);
 }
 
-// ----------------------------------------------------------------
-// (3) Variante instrumentada con sync_type + barrier
-//     sync_type:
-//       0 = atomic   sobre la métrica auxiliar
-//       1 = critical sobre la métrica auxiliar
-//       2 = variante enfocada en nowait, sin métrica auxiliar
-//
-//     En las tres variantes se usa nowait en el primer omp for
-//     para eliminar la barrera implícita. Luego use_barrier decide
-//     si se agrega una barrera explícita entre kick y drift.
-//
-//     Si use_barrier = false, no debe usarse para resultados físicos
-//     finales, ya que puede romper el orden del integrador de Euler.
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * integrateEuler (sync_type, use_barrier)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - sync_type: 0=atomic, 1=critical, 2=nowait.
+ *  - use_barrier: indica si se fuerza una barrera entre kick y drift.
+ *
+ * Salida:
+ *  - No retorna valor. Actualiza el estado físico y el tiempo del simulador.
+ *
+ * Descripción:
+ *  Variante instrumentada del integrador Euler para comparar mecanismos
+ *  de sincronización OpenMP. Permite observar el efecto de atomic, critical,
+ *  nowait y barrier sobre fases que tienen dependencia de orden físico.
+ */
 void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
     if (sync_type < 0 || sync_type > 2) {
         throw std::invalid_argument(
@@ -126,16 +181,19 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
 
         #pragma omp parallel shared(bodies, displacement_sum)
         {
+            // nowait elimina la barrera implícita al terminar kick.
             #pragma omp for nowait
             for (int i = 0; i < N; ++i)
                 bodies[i].kick(time_step_);
 
+            // Esta barrera asegura que todas las velocidades estén listas antes de drift.
             if (use_barrier) {
                 #pragma omp barrier
             }
 
             #pragma omp for
             for (int i = 0; i < N; ++i) {
+                // Se guarda la posición inicial para estimar el desplazamiento del paso.
                 double x0 = bodies[i].getX();
                 double y0 = bodies[i].getY();
 
@@ -145,6 +203,7 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
                 double dy = bodies[i].getY() - y0;
                 double disp = std::sqrt(dx * dx + dy * dy);
 
+                // atomic protege la suma compartida con bajo costo para una operación simple.
                 #pragma omp atomic
                 displacement_sum += disp;
             }
@@ -178,6 +237,7 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
                 double dy = bodies[i].getY() - y0;
                 double disp = std::sqrt(dx * dx + dy * dy);
 
+                // critical serializa esta sección para evitar carreras sobre displacement_sum.
                 #pragma omp critical
                 {
                     displacement_sum += disp;
@@ -210,15 +270,27 @@ void NBodySimulator::integrateEuler(int sync_type, bool use_barrier) {
     current_time_ += time_step_;
 }
 
-// ----------------------------------------------------------------
-// Ejecuta múltiples pasos temporales consecutivos
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * simulate (steps)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - steps: cantidad de pasos temporales que se ejecutarán.
+ *
+ * Salida:
+ *  - No retorna valor. El sistema avanza steps pasos de simulación.
+ *
+ * Descripción:
+ *  Ejecuta repetidamente integrateEuler() para avanzar el sistema durante
+ *  una cantidad determinada de pasos temporales.
+ */
 void NBodySimulator::simulate(int steps) {
     if (steps < 0) {
         throw std::invalid_argument(
             "NBodySimulator::simulate: steps no puede ser negativo.");
     }
 
+    // Cada iteración representa un paso temporal completo.
     for (int i = 0; i < steps; ++i)
         integrateEuler();
 }
@@ -227,13 +299,25 @@ void NBodySimulator::simulate(int steps) {
 // Energía y métricas globales
 // ================================================================
 
-// ----------------------------------------------------------------
-// Energía cinética serial de referencia
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculateKineticEnergy
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros. Lee las partículas almacenadas en system_.
+ *
+ * Salida:
+ *  - Retorna la energía cinética total del sistema.
+ *
+ * Descripción:
+ *  Calcula en forma serial la suma de 1/2*m*v² para todas las partículas.
+ *  Se usa como referencia física para las variantes paralelas.
+ */
 double NBodySimulator::calculateKineticEnergy() const {
     const auto& bodies = system_->getBodies();
     double K = 0.0;
 
+    // Se suma la contribución cinética individual de cada partícula.
     for (const auto& b : bodies) {
         double vx = b.getVx();
         double vy = b.getVy();
@@ -243,9 +327,20 @@ double NBodySimulator::calculateKineticEnergy() const {
     return K;
 }
 
-// ----------------------------------------------------------------
-// Energía potencial serial de referencia
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculatePotentialEnergy
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros. Lee masas, posiciones, G y epsilon desde system_.
+ *
+ * Salida:
+ *  - Retorna la energía potencial gravitacional total del sistema.
+ *
+ * Descripción:
+ *  Recorre cada par único de partículas i,j para acumular la energía
+ *  potencial suavizada, evitando contar dos veces la misma interacción.
+ */
 double NBodySimulator::calculatePotentialEnergy() const {
     const auto& bodies = system_->getBodies();
     const double G = system_->getG();
@@ -253,6 +348,7 @@ double NBodySimulator::calculatePotentialEnergy() const {
 
     double U = 0.0;
 
+    // Se recorren pares únicos i<j para no duplicar interacciones.
     for (int i = 0; i < system_->getCount(); ++i) {
         for (int j = i + 1; j < system_->getCount(); ++j) {
             double dx = bodies[j].getX() - bodies[i].getX();
@@ -266,33 +362,75 @@ double NBodySimulator::calculatePotentialEnergy() const {
     return U;
 }
 
-// ----------------------------------------------------------------
-// Energía total serial de referencia: E = K + U
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculateTotalEnergy
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros.
+ *
+ * Salida:
+ *  - Retorna la energía total del sistema.
+ *
+ * Descripción:
+ *  Calcula la energía total serial sumando energía cinética y potencial.
+ */
 double NBodySimulator::calculateTotalEnergy() const {
     return calculateKineticEnergy() + calculatePotentialEnergy();
 }
 
-// ----------------------------------------------------------------
-// Ruta base: delega en reduce
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculateEnergy
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros.
+ *
+ * Salida:
+ *  - Retorna la energía total calculada mediante la ruta base.
+ *
+ * Descripción:
+ *  Delega el cálculo en calculateEnergy(0, true), usando reducción como
+ *  método por defecto y firstprivate explícito.
+ */
 double NBodySimulator::calculateEnergy() {
     return calculateEnergy(0, true);
 }
 
-// ----------------------------------------------------------------
-// Ruta con method: delega en la versión extendida
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculateEnergy (method)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - method: método de acumulación, 0=reduction y 1=atomic.
+ *
+ * Salida:
+ *  - Retorna la energía total calculada con el método indicado.
+ *
+ * Descripción:
+ *  Delega en la versión extendida usando use_private=true por defecto.
+ */
 double NBodySimulator::calculateEnergy(int method) {
     return calculateEnergy(method, true);
 }
 
-// ----------------------------------------------------------------
-// Ruta instrumentada con method + use_private
-//     method:
-//       0 = reduce
-//       1 = atomic
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculateEnergy (method, use_private)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - method: 0=reduction, 1=atomic.
+ *  - use_private: activa o desactiva el uso explícito de firstprivate.
+ *
+ * Salida:
+ *  - Retorna la energía total y actualiza kinetic_energy_, potential_energy_
+ *    y total_energy_.
+ *
+ * Descripción:
+ *  Calcula energía cinética y potencial con variantes paralelas OpenMP.
+ *  Permite comparar reducción directa contra acumulación local por hilo
+ *  más actualización global mediante atomic.
+ */
 double NBodySimulator::calculateEnergy(int method, bool use_private) {
     if (method < 0 || method > 1) {
         throw std::invalid_argument(
@@ -308,7 +446,7 @@ double NBodySimulator::calculateEnergy(int method, bool use_private) {
 
     if (method == 0) {
         // --------------------------------------------------------
-        // reduce
+        // reduction
         // --------------------------------------------------------
         if (use_private) {
             #pragma omp parallel for reduction(+:K) \
@@ -415,6 +553,7 @@ double NBodySimulator::calculateEnergy(int method, bool use_private) {
         }
     }
 
+    // Se almacenan las métricas para poder consultarlas.
     kinetic_energy_ = K;
     potential_energy_ = U;
     total_energy_ = K + U;
@@ -426,26 +565,57 @@ double NBodySimulator::calculateEnergy(int method, bool use_private) {
 // Reparto de trabajo / cláusulas OpenMP de apoyo
 // ================================================================
 
-// ----------------------------------------------------------------
-// Ruta base: parallel for
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * processBodies
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros.
+ *
+ * Salida:
+ *  - No retorna valor. Ejecuta procesamiento auxiliar sobre las partículas.
+ *
+ * Descripción:
+ *  Ruta base que llama a processBodies(1, false), usando parallel for.
+ */
 void NBodySimulator::processBodies() {
     processBodies(1, false);
 }
 
-// ----------------------------------------------------------------
-// Ruta con task_type
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * processBodies (task_type)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - task_type: 0=task, 1=parallel for.
+ *
+ * Salida:
+ *  - No retorna valor. Ejecuta procesamiento auxiliar según task_type.
+ *
+ * Descripción:
+ *  Sobrecarga que delega en la versión extendida sin usar single para
+ *  la creación de tareas.
+ */
 void NBodySimulator::processBodies(int task_type) {
     processBodies(task_type, false);
 }
 
-// ----------------------------------------------------------------
-// Ruta con task_type + use_single
-//     task_type:
-//       0 = task
-//       1 = parallel for
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * processBodies (task_type, use_single)
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - task_type: 0=task, 1=parallel for.
+ *  - use_single: true usa single, false usa master para crear tareas.
+ *
+ * Salida:
+ *  - No retorna valor. Calcula una métrica auxiliar por partícula.
+ *
+ * Descripción:
+ *  Compara dos formas de repartir trabajo en OpenMP. La variante task
+ *  divide el trabajo en bloques y genera tareas; la variante parallel for
+ *  reparte directamente las iteraciones del bucle.
+ */
 void NBodySimulator::processBodies(int task_type, bool use_single) {
     if (task_type < 0 || task_type > 1) {
         throw std::invalid_argument(
@@ -460,6 +630,7 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
     std::vector<double> radii(N, 0.0);
 
     if (task_type == 0) {
+        // Se divide el vector en bloques para crear tareas de tamaño controlado.
         const int block_size = 16;
 
         #pragma omp parallel shared(bodies, radii)
@@ -467,6 +638,7 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
             if (use_single) {
                 #pragma omp single
                 {
+                    // El hilo que entra a single crea las tareas; los demás pueden ejecutarlas.
                     for (int begin = 0; begin < N; begin += block_size) {
                         int end = std::min(begin + block_size, N);
 
@@ -480,6 +652,7 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
                         }
                     }
 
+                    // Se espera a que todas las tareas creadas terminen antes de salir.
                     #pragma omp taskwait
                 }
             } else {
@@ -504,6 +677,7 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
         }
 
     } else {
+        // Variante directa: OpenMP reparte las iteraciones del bucle entre hilos.
         #pragma omp parallel for shared(bodies, radii)
         for (int i = 0; i < N; ++i) {
             double x = bodies[i].getX();
@@ -521,9 +695,20 @@ void NBodySimulator::processBodies(int task_type, bool use_single) {
     (void)checksum;
 }
 
-// ----------------------------------------------------------------
-// Demostración explícita de barrier entre fases
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * simulatePhasesBarrier
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros directos. Usa el sistema y configuración interna.
+ *
+ * Salida:
+ *  - No retorna valor. Avanza el sistema un paso temporal.
+ *
+ * Descripción:
+ *  Demuestra el uso explícito de barrier entre fases del integrador.
+ *  Primero todos los hilos terminan kick y luego comienzan drift.
+ */
 void NBodySimulator::simulatePhasesBarrier() {
     if (use_parallel_accel_) {
         system_->computeAccelerations(schedule_type_, chunk_size_);
@@ -540,6 +725,7 @@ void NBodySimulator::simulatePhasesBarrier() {
         for (int i = 0; i < N; ++i)
             bodies[i].kick(time_step_);
 
+        // La barrera separa explícitamente kick y drift para conservar dependencia física.
         #pragma omp barrier
 
         #pragma omp for
@@ -552,9 +738,20 @@ void NBodySimulator::simulatePhasesBarrier() {
     current_time_ += time_step_;
 }
 
-// ----------------------------------------------------------------
-// Inicialización paralela con single
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * parallelInitializationSingle
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros. Usa las partículas actuales del sistema.
+ *
+ * Salida:
+ *  - No retorna valor. Genera un vector auxiliar local de masas.
+ *
+ * Descripción:
+ *  Demuestra el uso de single dentro de una región paralela para ejecutar
+ *  una inicialización una sola vez antes de repartir trabajo con omp for.
+ */
 void NBodySimulator::parallelInitializationSingle() {
     auto& bodies = system_->getBodies();
     const int N = system_->getCount();
@@ -567,11 +764,13 @@ void NBodySimulator::parallelInitializationSingle() {
 
     #pragma omp parallel shared(masses, bodies)
     {
+        // Solo un hilo reserva el vector auxiliar compartido.
         #pragma omp single
         {
             masses.resize(N, 0.0);
         }
 
+        // Luego el trabajo de copiar masas se reparte entre los hilos.
         #pragma omp for
         for (int i = 0; i < N; ++i)
             masses[i] = bodies[i].getMass();
@@ -582,10 +781,20 @@ void NBodySimulator::parallelInitializationSingle() {
 }
 
 
-// ----------------------------------------------------------------
-// Métricas con firstprivate:
-// usa copias privadas inicializadas de N, G y eps2
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculateMetricsFirstprivate
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros. Lee el estado actual de system_.
+ *
+ * Salida:
+ *  - Retorna la energía total calculada y actualiza las métricas internas.
+ *
+ * Descripción:
+ *  Calcula energía usando reduction y firstprivate para entregar a cada
+ *  hilo copias inicializadas de variables como N, G y eps2.
+ */
 double NBodySimulator::calculateMetricsFirstprivate() {
     const auto& bodies = system_->getBodies();
     const int N = system_->getCount();
@@ -595,6 +804,7 @@ double NBodySimulator::calculateMetricsFirstprivate() {
     double K = 0.0;
     double U = 0.0;
 
+    // Cada hilo recibe una copia inicializada de N y la reducción acumula su aporte a K.
     #pragma omp parallel for reduction(+:K) firstprivate(N)
     for (int i = 0; i < N; ++i) {
         double vx = bodies[i].getVx();
@@ -602,6 +812,7 @@ double NBodySimulator::calculateMetricsFirstprivate() {
         K += 0.5 * bodies[i].getMass() * (vx * vx + vy * vy);
     }
 
+    // G y eps2 también se copian por hilo para el cálculo potencial.
     #pragma omp parallel for reduction(+:U) firstprivate(N, G, eps2)
     for (int i = 0; i < N; ++i) {
         for (int j = i + 1; j < N; ++j) {
@@ -621,10 +832,20 @@ double NBodySimulator::calculateMetricsFirstprivate() {
 }
 
 
-// ----------------------------------------------------------------
-// Recorrido con lastprivate:
-// conserva el último índice procesado por el for paralelo
-// ----------------------------------------------------------------
+/**
+ * ---------------------------------------------------------------
+ * calculateFinalStateLastprivate
+ * ---------------------------------------------------------------
+ * Entrada:
+ *  - No recibe parámetros. Recorre las partículas del sistema.
+ *
+ * Salida:
+ *  - Retorna el último índice lógico procesado, o -1 si no hay partículas.
+ *
+ * Descripción:
+ *  Demuestra lastprivate en un for paralelo, conservando al final el valor
+ *  correspondiente a la última iteración secuencial del bucle.
+ */
 int NBodySimulator::calculateFinalStateLastprivate() {
     const auto& bodies = system_->getBodies();
     const int N = system_->getCount();
@@ -635,6 +856,7 @@ int NBodySimulator::calculateFinalStateLastprivate() {
 
     int last_index = -1;
 
+    // lastprivate conserva el valor de last_index asociado a la última iteración lógica.
     #pragma omp parallel for lastprivate(last_index)
     for (int i = 0; i < N; ++i) {
         // Lectura simple para que el recorrido tenga sentido físico.

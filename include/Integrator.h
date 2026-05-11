@@ -6,16 +6,19 @@
 /**
  * Integrator
  * ----------
- * Componente encargado de la actualización temporal explícita
- * del estado de las partículas.
+ * Clase encargada de aplicar la integración temporal explícita
+ * sobre el conjunto de partículas del sistema.
  *
- * Implementa el esquema de integración de Euler explícito,
- * separando las fases de actualización de velocidad (kick)
- * y posición (drift), de manera que el simulador pueda
- * controlar correctamente el orden de ejecución.
+ * Implementa el método de Euler explícito separado en dos fases:
+ *  - kick: actualiza velocidades a partir de las aceleraciones actuales.
+ *  - drift: actualiza posiciones a partir de las velocidades actuales.
  *
- * Este módulo es utilizado por NBodySimulator para aplicar
- * la evolución temporal luego del cálculo de aceleraciones.
+ * Esta separación permite que NBodySimulator controle el orden físico
+ * del paso temporal, especialmente al combinar cálculo de aceleraciones,
+ * sincronización con OpenMP y actualización del estado del sistema.
+ *
+ * La clase no almacena estado interno: todas sus operaciones son static
+ * y trabajan directamente sobre el vector de partículas recibido.
  */
 class Integrator {
 public:
@@ -24,33 +27,24 @@ public:
     // ----------------------------------------------------------------
 
     /**
-     * Fase kick:
-     * Actualiza la velocidad de cada partícula usando la aceleración.
-     *
-     * v <- v + a * dt
-     *
+     * Aplica la fase kick sobre todas las partículas, actualizando
+     * sus velocidades con la aceleración actual y el paso temporal dt.
      * @param bodies Conjunto de partículas.
      * @param dt     Paso temporal.
      */
     static void applyKick(std::vector<Particle>& bodies, double dt);
 
     /**
-     * Fase drift:
-     * Actualiza la posición de cada partícula usando la velocidad.
-     *
-     * r <- r + v * dt
-     *
+     * Aplica la fase drift sobre todas las partículas, actualizando
+     * sus posiciones con la velocidad actual y el paso temporal dt.
      * @param bodies Conjunto de partículas.
      * @param dt     Paso temporal.
      */
     static void applyDrift(std::vector<Particle>& bodies, double dt);
 
     /**
-     * Paso completo de Euler explícito.
-     *
-     * Aplica primero kick y luego drift sobre todas las partículas.
-     * Se asume que las aceleraciones ya fueron calculadas previamente.
-     *
+     * Ejecuta un paso completo de Euler explícito, aplicando primero
+     * kick y luego drift sobre el mismo conjunto de partículas.
      * @param bodies Conjunto de partículas.
      * @param dt     Paso temporal.
      */
