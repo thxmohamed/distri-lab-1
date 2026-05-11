@@ -111,6 +111,17 @@ make benchmark
 make analysis
 make plots
 ```
+### Entorno de ejecución
+
+Los benchmarks reportados en el informe se ejecutaron en un nodo GPU
+del clúster de la universidad, debido a la no disponibilidad de nodos
+CPU en el momento de la medición. El código utiliza OpenMP con
+`parallel for` estándar, por lo que la ejecución paralela se realizó
+sobre los núcleos CPU del nodo GPU. Los resultados son válidos como
+medición de rendimiento en CPU, aunque las características del
+procesador de este nodo pueden diferir de un nodo CPU dedicado,
+lo que podría explicar comportamientos atípicos observados en
+schedule(guided) con chunks grandes.
 
 ### Parámetros de simulación
 
