@@ -7,23 +7,39 @@
 #include <iosfwd>
 
 /**
+ * =================================================================
  * NBodySystem
- * -----------
- * Contenedor principal del simulador: almacena todas las partículas
- * y los parámetros físicos globales (G, ε).
+ * =================================================================
  *
- * También es responsable del cálculo de aceleraciones (todo-pares),
- * que es el núcleo O(N²) del simulador.
+ * Clase central del simulador gravitacional N-cuerpos en 2D.
  *
- * Las variantes de computeAccelerations* permiten al Rol 2 (núcleo
- * paralelo) explorar distintos schedules y estrategias de OpenMP
- * sin modificar el contenedor de datos.
+ * Actúa como contenedor principal de todas las partículas del sistema
+ * y encapsula los parámetros físicos globales: la constante gravitacional
+ * G y el parámetro de suavizado ε (epsilon). Estos parámetros son
+ * compartidos por todas las interacciones del sistema.
+ *
+ * Su responsabilidad principal es el cálculo de aceleraciones todo-pares
+ * O(N²), implementando la ley de gravitación newtoniana con suavizado
+ * de Plummer para evitar singularidades numéricas cuando dos partículas
+ * se acercan demasiado.
+ *
+ * Para permitir el análisis de rendimiento con OpenMP, expone múltiples
+ * variantes del cálculo de aceleraciones: serial, paralela simple, con
+ * distintos schedules (static, dynamic, guided) y con collapse(2).
+ * Todas las variantes producen el mismo resultado físico y pueden
+ * compararse en benchmarks sin modificar el resto del simulador.
+ *
+ * Uso típico:
+ *   NBodySystem sys(1.0, 0.05);   // G=1, epsilon=0.05
+ *   sys.initDisk(1000, 1.0, 42);  // condición inicial
+ *   sys.computeAccelerations(0, 16); // schedule static, chunk=16
+ * =================================================================
  */
 class NBodySystem {
 private:
-    std::vector<Particle> bodies_;
-    double G_;        // constante gravitacional (G = 1.0 en unidades adimensionales)
-    double epsilon_;  // suavizado de Plummer (ε > 0)
+    std::vector<Particle> bodies_; // vector que almacena todas las partículas del sistema
+    double G_;                     // constante gravitacional (G = 1.0 en unidades adimensionales)
+    double epsilon_;               // parámetro de suavizado de Plummer (ε > 0), evita singularidades
 
 public:
     // ----------------------------------------------------------------
@@ -40,83 +56,69 @@ public:
     // Gestión de partículas
     // ----------------------------------------------------------------
 
+    /** Agrega una partícula al sistema. */
     void addParticle(const Particle& p);
+
+    /** Elimina todas las partículas del sistema. */
     void clear();
 
+    /** Retorna el número total de partículas almacenadas. */
     int  getCount() const;
-    const std::vector<Particle>& getBodies() const;
-    std::vector<Particle>&       getBodies();       // acceso mutable (para Integrator)
 
+    /** Retorna referencia constante al vector de partículas (solo lectura). */
+    const std::vector<Particle>& getBodies() const;
+
+    /** Retorna referencia mutable al vector de partículas (para uso del Integrator). */
+    std::vector<Particle>&       getBodies();
+
+    /** Retorna la constante gravitacional G del sistema. */
     double getG()       const { return G_;       }
+
+    /** Retorna el parámetro de suavizado epsilon del sistema. */
     double getEpsilon() const { return epsilon_; }
 
     // ----------------------------------------------------------------
     // Preproceso de aceleraciones
     // ----------------------------------------------------------------
 
-    /** Pone a cero ax, ay de todas las partículas. */
+    /** Pone a cero ax y ay de todas las partículas antes de cada paso de cálculo. */
     void zeroAccelerations();
 
     // ----------------------------------------------------------------
     // Cálculo de aceleraciones (todo-pares, ecuación 1 del enunciado)
     // ----------------------------------------------------------------
 
-    /**
-     * Versión serial de referencia.
-     *
-     * Se mantiene como serial para compatibilidad con código existente
-     * del proyecto, por ejemplo Benchmark o computeAccelerationsMode(0).
-     *
-     * Bucle externo sobre i, bucle interno sobre j ≠ i.
-     * Escribe únicamente bodies_[i].ax / ay.
-     */
+    /** Versión serial de referencia; delega en computeAccelerationsSerial(). */
     void computeAccelerations();
 
-    /**
-     * Alias explícito de la versión serial de referencia.
-     *
-     * No reemplaza a computeAccelerations(); se agrega para que el código
-     * y los benchmarks puedan distinguir de forma clara entre versión serial
-     * y versiones paralelas.
-     */
+    /** Implementación secuencial O(N²); útil como referencia y para benchmarks de un hilo. */
     void computeAccelerationsSerial();
 
     /**
-     * Versión paralela con schedule configurable.
+     * Versión paralela con schedule configurable y chunk_size = 1 por defecto.
      * @param schedule_type  0 = static, 1 = dynamic, 2 = guided
      */
     void computeAccelerations(int schedule_type);
 
     /**
-     * Versión paralela con schedule y chunk explícito.
+     * Versión paralela con schedule y chunk explícito; es la implementación base de las sobrecargas.
      * @param schedule_type  0 = static, 1 = dynamic, 2 = guided
      * @param chunk_size     Tamaño de chunk para el schedule. Debe ser > 0.
      */
     void computeAccelerations(int schedule_type, int chunk_size);
 
     /**
-     * Versión con collapse(2) sobre el doble bucle i,j.
-     *
-     * Como collapse(2) reparte pares (i,j), múltiples hilos pueden intentar
-     * acumular sobre la misma aceleración i. Por eso la implementación usa
-     * arreglos auxiliares y atomic sobre ax_tmp[i], ay_tmp[i].
+     * Variante con collapse(2) sobre el doble bucle (i, j); usa arreglos auxiliares
+     * y atomic para evitar condiciones de carrera al acumular sobre el mismo índice i.
      */
     void computeAccelerationsCollapse();
 
-    /**
-     * Versión paralela básica sin schedule explícito.
-     * Primer paso para validar paralelización.
-     */
+    /** Versión paralela básica sin schedule explícito; útil como primer paso de validación paralela. */
     void computeAccelerationsParallelSimple();
 
     /**
-     * Selector de modo para experimentación:
-     * 0 = serial
-     * 1 = paralelo simple
-     * 2 = static
-     * 3 = dynamic
-     * 4 = guided
-     * 5 = collapse
+     * Dispatcher que selecciona la variante de cálculo según el modo indicado.
+     * 0 = serial, 1 = paralelo simple, 2 = static, 3 = dynamic, 4 = guided, 5 = collapse.
      */
     void computeAccelerationsMode(int mode);
 
@@ -125,56 +127,25 @@ public:
     // ----------------------------------------------------------------
 
     /**
-     * Sistema binario: dos masas grandes + N-2 cuerpos ligeros perturbados.
-     * @param N      Número total de cuerpos.
+     * Inicializa dos masas dominantes simétricas con N-2 cuerpos ligeros perturbados.
+     * @param N      Número total de cuerpos (mínimo 2).
      * @param seed   Semilla para reproducibilidad.
      */
     void initBinary(int N, unsigned int seed = 42);
 
     /**
-     * Disco: posiciones en anillo/círculo, velocidades tangenciales.
-     * @param N      Número total de cuerpos.
-     * @param radius Radio del disco. Debe ser > 0.
+     * Inicializa una masa central y N-1 partículas en disco con velocidades tangenciales circulares.
+     * @param N      Número total de cuerpos (mínimo 1).
+     * @param radius Radio máximo del disco. Debe ser > 0.
      * @param seed   Semilla para reproducibilidad.
      */
     void initDisk(int N, double radius = 1.0, unsigned int seed = 42);
 
     /**
-     * Perfil tipo Plummer proyectado a 2D.
-     * @param N      Número total de cuerpos.
-     * @param a      Escala de Plummer. Debe ser > 0.
+     * Genera partículas con distribución tipo Plummer proyectada a 2D por muestreo inverso.
+     * @param N      Número total de cuerpos (mínimo 1).
+     * @param a      Escala de Plummer (radio característico). Debe ser > 0.
      * @param seed   Semilla para reproducibilidad.
      */
     void initPlummer(int N, double a = 0.5, unsigned int seed = 42);
-
-    // ----------------------------------------------------------------
-    // I/O del sistema
-    // ----------------------------------------------------------------
-
-    /**
-     * Escribe el estado de todas las partículas a un stream.
-     *
-     * Formato compatible con la versión original:
-     * una línea por partícula → x y vx vy ax ay
-     *
-     * Nota: por compatibilidad, no se escribe masa en este formato básico.
-     */
-    void writeState(std::ostream& out) const;
-
-    /**
-     * Guarda el estado en un archivo .dat.
-     * @param filename  Ruta del archivo de salida.
-     */
-    void saveToFile(const std::string& filename) const;
-
-    /**
-     * Carga partículas desde un archivo .dat.
-     *
-     * Formatos soportados:
-     *  - x y vx vy ax ay
-     *  - m x y vx vy ax ay
-     *
-     * Si la masa no aparece, se usa m = 1.0 por compatibilidad.
-     */
-    void loadFromFile(const std::string& filename);
 };
