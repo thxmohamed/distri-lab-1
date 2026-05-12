@@ -8,17 +8,26 @@
 // ============================================================
 // VALIDACIÓN FÍSICA DE NBODYSYSTEM
 // ============================================================
-// Este archivo verifica que la implementación de gravedad cumple:
+// Este archivo verifica que computeAccelerationsSerial implementa
+// correctamente la ley de gravitación newtoniana con suavizado de
+// Plummer:
 //
-// a_i = G * sum_{j != i} m_j * (r_j - r_i)
-//       / (|r_j - r_i|^2 + eps^2)^(3/2)
+//   a_i = G * Σ_{j≠i} m_j * (r_j - r_i) / (|r_j - r_i|² + ε²)^(3/2)
 //
-// OBJETIVOS:
-// - Validar fórmula física con casos analíticos.
-// - Validar dirección de aceleraciones.
-// - Validar simetría acción-reacción en términos de fuerza.
-// - Validar equilibrio por simetría.
-// - Detectar errores en dx, dy, masa, G o epsilon.
+// Los tests usan casos de dos o tres cuerpos con solución analítica
+// conocida, permitiendo detectar errores en: signo de dx/dy, uso de
+// la masa incorrecta, G mal aplicada, epsilon no elevado al cuadrado,
+// autointeracción (j==i no excluido) o confusión de componentes.
+//
+// La tolerancia es 1e-9: los valores analíticos involucran raíces
+// cuadradas y divisiones que introducen error de redondeo de última cifra.
+//
+// Se valida:
+// - Valor analítico exacto: 2 cuerpos en eje X
+// - Valor analítico exacto: 2 cuerpos en 2D real (detecta error en dy)
+// - Acción-reacción en fuerzas (m*a), no solo aceleraciones
+// - Equilibrio del cuerpo central en configuración simétrica de 3 cuerpos
+// - Simetría de aceleraciones para masas iguales
 // ============================================================
 
 

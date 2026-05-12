@@ -9,10 +9,23 @@
 // ============================================================
 // TEST UNITARIOS: Integrator
 // ============================================================
-// Valida:
-// - applyKick()  : v += a*dt para todas las partículas
-// - applyDrift() : r += v*dt para todas las partículas
-// - stepEuler()  : kick seguido de drift (orden correcto)
+// Integrator implementa el avance temporal del sistema actuando sobre
+// un vector de Particle. Sus tres métodos estáticos cubren los dos
+// sub-pasos del integrador de Euler y su composición:
+//
+//   applyKick(bodies, dt)  → v_i += a_i * dt  (para todo i)
+//   applyDrift(bodies, dt) → r_i += v_i * dt  (para todo i)
+//   stepEuler(bodies, dt)  → kick seguido de drift
+//
+// El orden kick → drift es intencional: la posición se actualiza con
+// la velocidad ya corregida por la aceleración del paso actual, lo que
+// corresponde al método de Euler semi-implícito y reduce la deriva de
+// energía respecto a drift → kick.
+//
+// Se valida:
+// - applyKick()  : v += a*dt para todas las partículas, sin tocar posición
+// - applyDrift() : r += v*dt para todas las partículas, sin tocar velocidad
+// - stepEuler()  : aplica kick antes que drift (orden correcto)
 // - Rechazo de dt no positivo en applyKick y applyDrift
 // - Comportamiento con vector vacío (sin crash)
 // ============================================================
@@ -20,6 +33,10 @@
 
 // ------------------------------------------------------------
 // TEST 1: applyKick actualiza velocidades de todas las partículas
+// ------------------------------------------------------------
+// Verifica que el kick se aplica a cada partícula del vector, con
+// valores distintos de aceleración por cuerpo, detectando errores
+// donde solo se actualiza el primero o se usa un índice fijo.
 // ------------------------------------------------------------
 TEST(Integrator_ApplyKick, UpdatesAllVelocities) {
     std::vector<Particle> bodies;
@@ -41,6 +58,10 @@ TEST(Integrator_ApplyKick, UpdatesAllVelocities) {
 // ------------------------------------------------------------
 // TEST 2: applyKick no modifica las posiciones
 // ------------------------------------------------------------
+// La separación kick/drift es la invariante central del integrador.
+// Un kick que modifica posiciones produciría un avance temporal
+// incorrecto que es difícil de detectar solo mirando energía.
+// ------------------------------------------------------------
 TEST(Integrator_ApplyKick, DoesNotChangePositions) {
     std::vector<Particle> bodies;
     bodies.emplace_back(1.0, 3.0, -2.0, 1.0, 1.0);
@@ -56,6 +77,9 @@ TEST(Integrator_ApplyKick, DoesNotChangePositions) {
 // ------------------------------------------------------------
 // TEST 3: applyKick rechaza dt no positivo
 // ------------------------------------------------------------
+// Un dt=0 o negativo haría que el tiempo retroceda o se congele;
+// debe rechazarse antes de modificar cualquier partícula.
+// ------------------------------------------------------------
 TEST(Integrator_ApplyKick, RejectsNonPositiveDt) {
     std::vector<Particle> bodies;
     bodies.emplace_back(1.0, 0.0, 0.0);
@@ -67,6 +91,9 @@ TEST(Integrator_ApplyKick, RejectsNonPositiveDt) {
 
 // ------------------------------------------------------------
 // TEST 4: applyDrift actualiza posiciones de todas las partículas
+// ------------------------------------------------------------
+// Simétrico al TEST 1 para drift: verifica que todas las partículas
+// del vector avanzan su posición con su propia velocidad.
 // ------------------------------------------------------------
 TEST(Integrator_ApplyDrift, UpdatesAllPositions) {
     std::vector<Particle> bodies;
@@ -85,6 +112,9 @@ TEST(Integrator_ApplyDrift, UpdatesAllPositions) {
 // ------------------------------------------------------------
 // TEST 5: applyDrift no modifica las velocidades
 // ------------------------------------------------------------
+// drift() solo actualiza posición. Detecta implementaciones que
+// mezclan ambos sub-pasos en un único método.
+// ------------------------------------------------------------
 TEST(Integrator_ApplyDrift, DoesNotChangeVelocities) {
     std::vector<Particle> bodies;
     bodies.emplace_back(1.0, 0.0, 0.0, 5.0, -3.0);
@@ -99,6 +129,8 @@ TEST(Integrator_ApplyDrift, DoesNotChangeVelocities) {
 // ------------------------------------------------------------
 // TEST 6: applyDrift rechaza dt no positivo
 // ------------------------------------------------------------
+// Mismo criterio de validación que TEST 3 aplicado al sub-paso drift.
+// ------------------------------------------------------------
 TEST(Integrator_ApplyDrift, RejectsNonPositiveDt) {
     std::vector<Particle> bodies;
     bodies.emplace_back(1.0, 0.0, 0.0);
@@ -110,6 +142,10 @@ TEST(Integrator_ApplyDrift, RejectsNonPositiveDt) {
 
 // ------------------------------------------------------------
 // TEST 7: stepEuler aplica kick antes que drift
+// ------------------------------------------------------------
+// Con v0=0, a=2 y dt=1: kick da vx=2, luego drift da x=2. Si el orden
+// fuera invertido (drift → kick), x quedaría en 0 porque drift usaría
+// la velocidad pre-kick. El test distingue ambos órdenes de forma exacta.
 // ------------------------------------------------------------
 TEST(Integrator_StepEuler, AppliesKickThenDrift) {
     std::vector<Particle> bodies;
@@ -130,6 +166,9 @@ TEST(Integrator_StepEuler, AppliesKickThenDrift) {
 // ------------------------------------------------------------
 // TEST 8: stepEuler — la posición usa la velocidad post-kick
 // ------------------------------------------------------------
+// Variante con x0≠0 y v0=0: confirma que drift usa la velocidad
+// actualizada por kick, no la velocidad original del paso anterior.
+// ------------------------------------------------------------
 TEST(Integrator_StepEuler, PositionUsesUpdatedVelocity) {
     std::vector<Particle> bodies;
     // v0=(0,0), a=(1,0), pos=(5,0)
@@ -148,6 +187,10 @@ TEST(Integrator_StepEuler, PositionUsesUpdatedVelocity) {
 // ------------------------------------------------------------
 // TEST 9: vector vacío no produce error
 // ------------------------------------------------------------
+// Un sistema sin partículas es válido en construcción; los tres
+// métodos deben ser no-ops silenciosos para no forzar al llamador
+// a verificar el tamaño antes de integrar.
+// ------------------------------------------------------------
 TEST(Integrator_EdgeCases, EmptyVectorIsNoOp) {
     std::vector<Particle> empty;
 
@@ -159,6 +202,10 @@ TEST(Integrator_EdgeCases, EmptyVectorIsNoOp) {
 
 // ------------------------------------------------------------
 // TEST 10: stepEuler sobre una sola partícula con movimiento 2D
+// ------------------------------------------------------------
+// Verifica la composición kick+drift en ambas componentes con dt
+// pequeño (0.1) y valores no simétricos, detectando errores de
+// precisión o confusión de componentes en el caso 2D completo.
 // ------------------------------------------------------------
 TEST(Integrator_StepEuler, SingleParticle2D) {
     std::vector<Particle> bodies;

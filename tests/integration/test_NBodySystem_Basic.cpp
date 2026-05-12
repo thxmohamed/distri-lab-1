@@ -8,12 +8,19 @@
 // ============================================================
 // TEST BÁSICO NBodySystem
 // ============================================================
-// Valida:
-// - Construcción válida e inválida del sistema
-// - Gestión básica de partículas
-// - zeroAccelerations()
-// - Rechazo de masa no positiva en Particle
-// - Inicializaciones reproducibles básicas
+// NBodySystem es el contenedor central del simulador: almacena las
+// partículas y encapsula G y epsilon. Antes de cualquier benchmark o
+// análisis físico, estos tests verifican que el sistema puede construirse,
+// poblarse y limpiarse correctamente, y que las condiciones iniciales
+// predefinidas (initBinary, initDisk, initPlummer) son reproducibles
+// con la misma semilla y rechazan parámetros inválidos.
+//
+// Se valida:
+// - Constructor: almacena G y epsilon, rechaza epsilon ≤ 0
+// - Particle rechaza masa no positiva (integración con NBodySystem)
+// - addParticle() y clear(): conteo y vaciado correctos
+// - zeroAccelerations(): limpia ax y ay de todas las partículas
+// - initBinary, initDisk, initPlummer: reproducibilidad y rechazo de parámetros inválidos
 // ============================================================
 
 
@@ -31,6 +38,10 @@ TEST(NBodySystem_Basic, Constructor_ValidParameters) {
 
 // ------------------------------------------------------------
 // TEST 2: Constructor rechaza epsilon no positivo
+// ------------------------------------------------------------
+// epsilon=0 elimina el suavizado de Plummer y permite singularidades
+// numéricas cuando dos cuerpos se superponen. Debe rechazarse en
+// construcción para garantizar que el denominador nunca sea cero.
 // ------------------------------------------------------------
 TEST(NBodySystem_Basic, Constructor_RejectsNonPositiveEpsilon) {
     EXPECT_THROW(NBodySystem(1.0, 0.0), std::invalid_argument);
@@ -102,6 +113,10 @@ TEST(NBodySystem_Basic, ZeroAccelerations) {
 // ------------------------------------------------------------
 // TEST 6: initBinary genera N partículas reproducibles
 // ------------------------------------------------------------
+// La reproducibilidad con la misma semilla es esencial para que los
+// benchmarks sean comparables entre ejecuciones. Dos sistemas con la
+// misma semilla deben tener estado inicial bit a bit idéntico.
+// ------------------------------------------------------------
 TEST(NBodySystem_Basic, InitBinary_Reproducible) {
     NBodySystem sys1(1.0, 0.01);
     NBodySystem sys2(1.0, 0.01);
@@ -127,6 +142,9 @@ TEST(NBodySystem_Basic, InitBinary_Reproducible) {
 
 // ------------------------------------------------------------
 // TEST 7: initBinary rechaza N inválido
+// ------------------------------------------------------------
+// initBinary requiere al menos 2 cuerpos (las dos masas dominantes).
+// Con N<2 el sistema binario no tiene sentido físico y debe rechazarse.
 // ------------------------------------------------------------
 TEST(NBodySystem_Basic, InitBinary_RejectsInvalidN) {
     NBodySystem sys(1.0, 0.01);

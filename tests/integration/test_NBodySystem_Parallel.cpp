@@ -10,17 +10,24 @@
 // ============================================================
 // TEST DE PARALELISMO N-BODY SYSTEM
 // ============================================================
-// OBJETIVO:
-// Verificar que todas las implementaciones OpenMP producen
-// resultados equivalentes a la versión serial.
+// NBodySystem expone varias variantes paralelas del cómputo de
+// aceleraciones O(N²): paralelo simple, schedules static/dynamic/guided
+// con chunk configurable y collapse(2). Todas deben producir el mismo
+// resultado físico que la versión serial de referencia.
+//
+// La tolerancia de comparación es 1e-6: las variantes con atomic
+// (como collapse) pueden acumular en orden distinto, introduciendo
+// diferencias de redondeo en coma flotante que son correctas.
+// La versión serial vs serial se verifica a 1e-12.
 //
 // Se valida:
 // - Parallel simple vs serial
-// - OpenMP schedules static, dynamic, guided
-// - Variantes con chunk explícito
-// - collapse(2)
-// - computeAccelerationsMode()
-// - Rechazo de parámetros inválidos en schedules
+// - OpenMP schedules static, dynamic, guided sin chunk explícito
+// - OpenMP schedules con chunk explícito {1, 2, 4}
+// - collapse(2) con atomic vs serial
+// - computeAccelerationsMode() para modos 0 a 5
+// - Rechazo de schedule_type inválido y chunk_size ≤ 0
+// - Rechazo de modo inválido en computeAccelerationsMode()
 // ============================================================
 
 
@@ -177,8 +184,10 @@ TEST(NBodySystem_Parallel, ComputeAccelerationsMode_AllValidModes_vs_Serial) {
 // ------------------------------------------------------------
 // TEST 7: parámetros inválidos para schedules
 // ------------------------------------------------------------
-// Este test corresponde a la versión mejorada de NBodySystem,
-// donde schedule_type y chunk_size se validan explícitamente.
+// schedule_type fuera de {0,1,2} y chunk_size ≤ 0 no tienen sentido
+// físico ni en OpenMP. Deben rechazarse con std::invalid_argument
+// antes de entrar a la región paralela.
+// ------------------------------------------------------------
 TEST(NBodySystem_Parallel, RejectsInvalidScheduleArguments) {
     NBodySystem sys(1.0, 0.01);
     sys.initBinary(10, 42);
@@ -192,11 +201,12 @@ TEST(NBodySystem_Parallel, RejectsInvalidScheduleArguments) {
 
 
 // ------------------------------------------------------------
-// TEST 8: modo inválido
+// TEST 8: modo inválido en computeAccelerationsMode
 // ------------------------------------------------------------
-// Si en tu NBodySystem mejorado dejaste que el default lance excepción,
-// este test sirve. Si decidiste mantener fallback serial para compatibilidad,
-// elimina este test o cámbialo por EXPECT_NO_THROW.
+// Un modo fuera del rango 0–5 no corresponde a ninguna variante
+// definida; debe lanzar std::invalid_argument para evitar comportamiento
+// indefinido por caer en un branch no inicializado del dispatcher.
+// ------------------------------------------------------------
 TEST(NBodySystem_Parallel, ComputeAccelerationsMode_RejectsInvalidMode) {
     NBodySystem sys(1.0, 0.01);
     sys.initBinary(10, 42);

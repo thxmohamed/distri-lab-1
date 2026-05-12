@@ -56,6 +56,9 @@ distri-lab-1/
 │   ├── plot_amdahl.py
 │   ├── plot_trajectories.py
 │   └── plot_energy.py
+├── resultados_cluster/         # Resultados obtenidos en el cluster Xi (DIINF)
+│   ├── dat/                    # Archivos de datos (.dat) generados por benchmark y analysis
+│   └── png/                    # Gráficos (.png) generados por make plots
 ├── Dockerfile
 ├── Makefile
 └── README.md
@@ -79,6 +82,8 @@ La estructura del proyecto se diseñó para agrupar los archivos por la funciona
   - **`tests/integration/`** — Pruebas que verifican la interacción entre diferentes módulos del sistema.
 
 - **`scripts/`** — Contiene los scripts Python que leen los archivos `.dat` generados por la simulación y producen los gráficos de rendimiento y análisis físico.
+
+- **`resultados_cluster/`** — Contiene los resultados obtenidos al ejecutar el benchmark y el análisis en el cluster Xi del DIINF, organizados en subcarpetas `dat/` y `png/`.
 
 ## Compilación
 
@@ -111,6 +116,7 @@ make benchmark
 make analysis
 make plots
 ```
+
 ### Entorno de ejecución
 
 Los benchmarks reportados en el informe se ejecutaron en un nodo GPU

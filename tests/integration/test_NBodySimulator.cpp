@@ -12,16 +12,24 @@
 // variantes instrumentadas de NBodySimulator se comportan de
 // forma correcta sobre sistemas físicos simples.
 //
+// NBodySimulator orquesta el lazo temporal completo: para cada paso
+// llama a computeAccelerations sobre el NBodySystem subyacente y luego
+// aplica el integrador de Euler (kick → drift). Adicionalmente expone
+// variantes instrumentadas que ejercen distintas construcciones de
+// OpenMP (atomic, critical, reduce, barrier, nowait, task, single,
+// firstprivate, lastprivate) para permitir su benchmark y validación.
+//
 // Se valida:
-// - Integración temporal básica con un solo cuerpo
-// - Cálculo de energía cinética
-// - Cálculo de energía potencial
-// - Consistencia entre calculateEnergy con reduce y atomic
-// - Ejecución coherente de integrateEuler instrumentado
-// - Ejecución de rutas OpenMP: task, single, master, barrier,
-//   firstprivate, lastprivate y parallel for
-// - Cálculo auxiliar por cuerpo en processBodies para comparar
-//   task vs parallel for
+// - Integración temporal básica con un solo cuerpo (movimiento libre)
+// - Cálculo de energía cinética con valor analítico conocido
+// - Cálculo de energía potencial con valor analítico conocido
+// - Consistencia numérica entre reduce y atomic en calculateEnergy
+// - Equivalencia de integrateEuler en sus variantes atomic, critical,
+//   nowait respecto a la referencia sin instrumentación
+// - Ausencia de errores de ejecución en rutas OpenMP: task+single,
+//   task+master, parallel for, barrier y single de inicialización
+// - Corrección de firstprivate (energía igual a serial) y
+//   lastprivate (índice final del último cuerpo procesado)
 // ============================================================
 
 // ------------------------------------------------------------
@@ -130,7 +138,11 @@ TEST(NBodySimulator, IntegrateEulerVariantsMatchReference) {
 
 // ------------------------------------------------------------
 // TEST 6: processBodies con task + single
-// Cubre task y single
+// ------------------------------------------------------------
+// processBodies(0, true) crea una región paralela donde un único hilo
+// (single) genera tasks OpenMP, uno por cuerpo. Valida que la
+// construcción task+single no produce data races ni deadlocks con
+// un sistema de 20 partículas.
 // ------------------------------------------------------------
 TEST(NBodySimulator, ProcessBodiesTaskSingleRuns) {
     NBodySystem sys(1.0, 0.01);
@@ -143,7 +155,11 @@ TEST(NBodySimulator, ProcessBodiesTaskSingleRuns) {
 
 // ------------------------------------------------------------
 // TEST 7: processBodies con task + master
-// Compara creación de tareas con master
+// ------------------------------------------------------------
+// processBodies(0, false) usa master en lugar de single para la
+// generación de tasks: solo el hilo 0 los crea. Verifica que la
+// variante master produce el mismo comportamiento sin errores,
+// ejerciendo una ruta de sincronización distinta a single.
 // ------------------------------------------------------------
 TEST(NBodySimulator, ProcessBodiesTaskMasterRuns) {
     NBodySystem sys(1.0, 0.01);
@@ -156,7 +172,11 @@ TEST(NBodySimulator, ProcessBodiesTaskMasterRuns) {
 
 // ------------------------------------------------------------
 // TEST 8: processBodies con parallel for
-// Cubre ruta parallel for
+// ------------------------------------------------------------
+// processBodies(1) distribuye el recorrido de cuerpos con parallel for
+// en lugar de tasks. Verifica que esta ruta alternativa de paralelismo
+// ejecuta sin errores, lo que permite comparar ambas estrategias en
+// benchmarks sin comprometer la corrección.
 // ------------------------------------------------------------
 TEST(NBodySimulator, ProcessBodiesParallelForRuns) {
     NBodySystem sys(1.0, 0.01);
@@ -169,7 +189,11 @@ TEST(NBodySimulator, ProcessBodiesParallelForRuns) {
 
 // ------------------------------------------------------------
 // TEST 9: simulatePhasesBarrier
-// Cubre barrier explícito entre fases
+// ------------------------------------------------------------
+// simulatePhasesBarrier ejecuta un paso de simulación dividido en
+// fases separadas por barriers explícitos: garantiza que todos los
+// hilos terminan computeAccelerations antes de iniciar la integración.
+// Verifica que la sincronización con barrier no produce deadlocks.
 // ------------------------------------------------------------
 TEST(NBodySimulator, SimulatePhasesBarrierRuns) {
     NBodySystem sys(1.0, 0.01);
@@ -182,7 +206,11 @@ TEST(NBodySimulator, SimulatePhasesBarrierRuns) {
 
 // ------------------------------------------------------------
 // TEST 10: parallelInitializationSingle
-// Cubre single en inicialización paralela
+// ------------------------------------------------------------
+// parallelInitializationSingle inicializa estructuras auxiliares dentro
+// de una región paralela usando single, de modo que solo un hilo ejecuta
+// la inicialización mientras los demás esperan en el barrier implícito.
+// Verifica que esta construcción no introduce condiciones de carrera.
 // ------------------------------------------------------------
 TEST(NBodySimulator, ParallelInitializationSingleRuns) {
     NBodySystem sys(1.0, 0.01);
@@ -195,7 +223,12 @@ TEST(NBodySimulator, ParallelInitializationSingleRuns) {
 
 // ------------------------------------------------------------
 // TEST 11: calculateMetricsFirstprivate
-// Cubre firstprivate y compara con energía serial
+// ------------------------------------------------------------
+// firstprivate inicializa la variable privada de cada hilo con el valor
+// del hilo principal antes de entrar a la región paralela. Este test
+// verifica que el cálculo de energía con firstprivate produce el mismo
+// resultado que la versión serial, detectando errores de inicialización
+// de variables privadas.
 // ------------------------------------------------------------
 TEST(NBodySimulator, CalculateMetricsFirstprivateMatchesSerialEnergy) {
     NBodySystem sys(1.0, 0.01);
@@ -211,7 +244,12 @@ TEST(NBodySimulator, CalculateMetricsFirstprivateMatchesSerialEnergy) {
 
 // ------------------------------------------------------------
 // TEST 12: calculateFinalStateLastprivate
-// Cubre lastprivate
+// ------------------------------------------------------------
+// lastprivate copia al hilo principal el valor de la variable privada
+// correspondiente a la última iteración del bucle paralelo. Este test
+// verifica que el índice devuelto es exactamente getCount()-1, lo que
+// confirma que lastprivate propaga correctamente el valor de la última
+// iteración y no el de un hilo arbitrario.
 // ------------------------------------------------------------
 TEST(NBodySimulator, CalculateFinalStateLastprivateReturnsLastIndex) {
     NBodySystem sys(1.0, 0.01);
@@ -226,7 +264,11 @@ TEST(NBodySimulator, CalculateFinalStateLastprivateReturnsLastIndex) {
 
 // ------------------------------------------------------------
 // TEST 13: calculateFinalStateLastprivate con sistema vacío
-// Verifica caso borde sin partículas
+// ------------------------------------------------------------
+// Caso borde: con cero partículas el bucle no itera, por lo que
+// lastprivate nunca escribe y el índice debe quedar en -1 (valor
+// centinela). Verifica que la implementación maneja este caso sin
+// comportamiento indefinido.
 // ------------------------------------------------------------
 TEST(NBodySimulator, CalculateFinalStateLastprivateEmptySystem) {
     NBodySystem sys(1.0, 0.01);

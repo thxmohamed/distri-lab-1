@@ -8,12 +8,18 @@
 // ============================================================
 // TESTS DE REGRESIÓN
 // ============================================================
+// Estos tests cubren propiedades que no se verifican directamente
+// en los tests físicos o de paralelismo, pero que podrían romperse
+// silenciosamente por cambios en el código: sensibilidad a la masa,
+// caso borde de un solo cuerpo, idempotencia del cómputo, integridad
+// del vector de cuerpos tras paralelismo y ausencia de autointeracción.
+//
 // Se valida:
-// - La masa afecta la aceleración calculada
-// - Un solo cuerpo tiene aceleración cero
-// - Recomputar aceleraciones sin mover partículas da el mismo resultado
-// - Las variantes paralelas no alteran el número de cuerpos
-// - No hay autointeracción (j == i excluido del bucle interno)
+// - La masa del atractor escala linealmente la aceleración del atraído
+// - Un solo cuerpo tiene aceleración cero (no hay par j≠i)
+// - Recomputar aceleraciones sin mover partículas da resultado idéntico
+// - Las variantes paralelas no corrompen ni el conteo ni el vector
+// - No hay autointeracción: j==i está excluido del bucle interno
 // ============================================================
 
 
@@ -63,6 +69,10 @@ TEST(Regression, SingleBodyHasZeroAcceleration) {
 // ------------------------------------------------------------
 // TEST 3: Recomputar sin mover partículas da el mismo resultado
 // ------------------------------------------------------------
+// zeroAccelerations() debe limpiar completamente los valores anteriores
+// antes de cada cómputo. Si no lo hace, las aceleraciones se acumulan
+// entre llamadas y la segunda ejecución daría resultados distintos.
+// ------------------------------------------------------------
 TEST(Regression, RecomputeGivesSameResult) {
     NBodySystem sys(1.0, 0.01);
     sys.initBinary(10, 99);
@@ -91,6 +101,10 @@ TEST(Regression, RecomputeGivesSameResult) {
 
 // ------------------------------------------------------------
 // TEST 4: El cómputo paralelo no altera el número de cuerpos
+// ------------------------------------------------------------
+// Un data race sobre el vector de partículas podría corromper su tamaño
+// o invalidar iteradores. Verifica que getCount() es estable después de
+// cuatro variantes paralelas distintas sobre el mismo sistema.
 // ------------------------------------------------------------
 TEST(Regression, ParallelComputeDoesNotCorruptBodyCount) {
     const int N = 20;
