@@ -5,31 +5,39 @@
 /**
  * NBodySimulator
  * --------------
- * Orquestador de la evolución temporal del sistema N-cuerpos.
+ * Clase encargada de coordinar la simulación temporal de un sistema
+ * gravitacional de N cuerpos.
  *
- * Este módulo coordina:
- *  - El cálculo de aceleraciones (delegado a NBodySystem)
- *  - La integración temporal (usando Integrator)
- *  - El cálculo de métricas físicas globales (energía)
+ * Su responsabilidad principal es orquestar el flujo completo de simulación:
+ *  - solicitar el cálculo de aceleraciones al NBodySystem,
+ *  - aplicar integración temporal mediante Integrator,
+ *  - actualizar el tiempo actual de simulación,
+ *  - calcular métricas físicas globales como energía cinética,
+ *    energía potencial y energía total.
  *
- * Además, expone rutas instrumentadas para experimentar con
- * distintas estrategias de sincronización y paralelismo
+ * También incorpora variantes instrumentadas con OpenMP para probar
+ * estrategias de sincronización, reparto de trabajo y cláusulas como
+ * atomic, critical, nowait, barrier, task, single, firstprivate y lastprivate.
+ *
+ * Esta clase no almacena directamente las partículas, sino que trabaja
+ * sobre un NBodySystem externo recibido por puntero.
  */
 class NBodySimulator {
 private:
-    NBodySystem* system_;
-    double time_step_;
-    double current_time_;
+    NBodySystem* system_;      // Sistema físico que contiene las partículas y calcula aceleraciones.
+    double time_step_;         // Paso temporal dt utilizado en cada avance de la simulación.
+    double current_time_;      // Tiempo acumulado de simulación desde el inicio.
 
-    // Últimas métricas calculadas
-    double kinetic_energy_;
-    double potential_energy_;
-    double total_energy_;
+    // Últimas métricas físicas calculadas por el simulador.
+    double kinetic_energy_;    // Energía cinética total del sistema.
+    double potential_energy_;  // Energía potencial gravitacional total del sistema.
+    double total_energy_;      // Energía total del sistema: cinética + potencial.
 
-    // Configuración del cálculo de aceleraciones
-    bool use_parallel_accel_;
-    int schedule_type_;
-    int chunk_size_;
+    // Configuración del cálculo de aceleraciones usado por integrateEuler().
+    bool use_parallel_accel_;  // Indica si se usa cálculo de aceleraciones paralelo o serial.
+    int schedule_type_;        // Tipo de schedule OpenMP: 0=static, 1=dynamic, 2=guided.
+    int chunk_size_;           // Tamaño de chunk usado en los schedules paralelos.
+
 
 public:
     // ----------------------------------------------------------------
@@ -37,15 +45,15 @@ public:
     // ----------------------------------------------------------------
 
     /**
+     * Construye el simulador asociado a un NBodySystem y define el paso temporal.
      * @param sys Sistema físico a simular (no nulo).
      * @param dt  Paso temporal (dt > 0).
      */
     NBodySimulator(NBodySystem* sys, double dt);
 
     /**
-     * Permite seleccionar si la simulación completa usa la versión
-     * serial o paralela del cálculo de aceleraciones.
-     *
+     * Configura si integrateEuler() usa aceleraciones seriales o paralelas,
+     * además del tipo de schedule y chunk para la versión paralela.
      * @param use_parallel   true = usa versión paralela
      * @param schedule_type  0 = static, 1 = dynamic, 2 = guided
      * @param chunk_size     Tamaño de chunk para el schedule
@@ -57,42 +65,29 @@ public:
     // ----------------------------------------------------------------
 
     /**
-     * Versión base (serial de referencia).
-     *
-     * Flujo:
-     *  (1) calcular aceleraciones
-     *  (2) actualizar velocidades (kick)
-     *  (3) actualizar posiciones (drift)
+     * Ejecuta un paso temporal base: calcula aceleraciones, aplica kick,
+     * aplica drift y actualiza el tiempo actual de simulación.
      */
     void integrateEuler();
 
     /**
-     * Variante instrumentada con tipo de sincronización.
-     *
-     * @param sync_type
-     *  0 = atomic
-     *  1 = critical
-     *  2 = nowait
+     * Ejecuta una variante instrumentada del paso Euler según sync_type,
+     * usando barrera explícita por defecto para conservar el orden físico.
+     * @param sync_type  0 = atomic, 1 = critical, 2 = nowait
      */
     void integrateEuler(int sync_type);
 
     /**
-     * Variante instrumentada con control explícito de barrier.
-     *
-     * @param sync_type
-     *  0 = atomic
-     *  1 = critical
-     *  2 = nowait
-     *
-     * @param use_barrier
-     *  true  = fuerza sincronización entre fases
-     *  false = permite ejecución sin barrera
+     * Ejecuta una variante instrumentada del paso Euler, permitiendo elegir
+     * tipo de sincronización y si se usa barrera entre kick y drift.
+     * @param sync_type    0 = atomic, 1 = critical, 2 = nowait
+     * @param use_barrier  true  = fuerza sincronización entre fases, false = permite ejecución sin barrera
      */
     void integrateEuler(int sync_type, bool use_barrier);
 
     /**
-     * Ejecuta múltiples pasos de simulación consecutivos.
-     *
+     * Ejecuta varios pasos temporales consecutivos llamando repetidamente
+     * a integrateEuler().
      * @param steps Número de pasos temporales.
      */
     void simulate(int steps);
@@ -102,45 +97,36 @@ public:
     // ----------------------------------------------------------------
 
     /**
-     * Energía total (ruta base).
-     * Internamente utiliza reducción.
+     * Calcula la energía total usando la ruta base con reducción.
      */
     double calculateEnergy();
 
     /**
-     * Variante de cálculo de energía.
-     *
-     * @param method
-     *  0 = reduce
-     *  1 = atomic
+     * Calcula la energía total usando el método indicado: reduction o atomic.
+     * @param method  0 = reduction, 1 = atomic
      */
     double calculateEnergy(int method);
 
     /**
-     * Variante extendida de cálculo de energía.
-     *
-     * @param method
-     *  0 = reduce
-     *  1 = atomic
-     *
-     * @param use_private
-     *  true  = usa variables privadas explícitas
-     *  false = deja variables locales implícitas
+     * Calcula la energía total usando method y controlando el uso explícito
+     * de variables privadas en las regiones paralelas.
+     * @param method       0 = reduction, 1 = atomic
+     * @param use_private  true = usa firstprivate explícito, false = no usa firstprivate explícito
      */
     double calculateEnergy(int method, bool use_private);
 
     /**
-     * Energía cinética (serial de referencia).
+     * Calcula la energía cinética total en forma serial de referencia.
      */
     double calculateKineticEnergy() const;
 
     /**
-     * Energía potencial (serial de referencia).
+     * Calcula la energía potencial gravitacional total en forma serial.
      */
     double calculatePotentialEnergy() const;
 
     /**
-     * Energía total (serial de referencia).
+     * Calcula la energía total serial como suma de energía cinética y potencial.
      */
     double calculateTotalEnergy() const;
 
@@ -149,51 +135,43 @@ public:
     // ----------------------------------------------------------------
 
     /**
-     * Versión base usando parallel for.
+     * Ejecuta la ruta base de procesamiento auxiliar usando parallel for.
      */
     void processBodies();
 
     /**
-     * Variante con tipo de paralelismo.
-     *
-     * @param task_type
-     *  0 = task
-     *  1 = parallel for
+     * Procesa cuerpos usando task o parallel for según el tipo recibido.
+     * @param task_type  0 = task, 1 = parallel for
      */
     void processBodies(int task_type);
 
     /**
-     * Variante extendida con control de creación de tareas.
-     *
-     * @param task_type
-     *  0 = task
-     *  1 = parallel for
-     *
-     * @param use_single
-     *  true  = usa single
-     *  false = usa master
+     * Procesa cuerpos permitiendo elegir task/parallel for y controlar
+     * si la creación de tareas se realiza con single o master.
+     * @param task_type   0 = task, 1 = parallel for
+     * @param use_single  true  = usa single, false = usa master
      */
     void processBodies(int task_type, bool use_single);
 
     /**
-     * Demostración explícita de sincronización por fases.
+     * Demuestra sincronización explícita entre fases usando barrier.
      */
     void simulatePhasesBarrier();
 
     /**
-     * Ejemplo de inicialización paralela con single.
+     * Demuestra inicialización paralela donde single reserva memoria
+     * una sola vez antes del trabajo distribuido.
      */
     void parallelInitializationSingle();
 
     /**
-     * Demostración de firstprivate en cálculo de métricas.
-     * Calcula energía total usando copias privadas inicializadas.
+     * Calcula métricas usando firstprivate para inicializar copias privadas
+     * de variables dentro de regiones paralelas.
      */
     double calculateMetricsFirstprivate();
 
     /**
-     * Demostración de lastprivate.
-     * Guarda el índice final procesado en un recorrido paralelo.
+     * Demuestra lastprivate conservando el último índice lógico del for paralelo.
      */
     int calculateFinalStateLastprivate();
 
@@ -201,10 +179,10 @@ public:
     // Getters
     // ----------------------------------------------------------------
 
-    double getTimeStep() const { return time_step_; }
-    double getCurrentTime() const { return current_time_; }
+    double getTimeStep() const { return time_step_; }               // Retorna el paso temporal configurado.
+    double getCurrentTime() const { return current_time_; }         // Retorna el tiempo acumulado de simulación.
 
-    double getKineticEnergy() const { return kinetic_energy_; }
-    double getPotentialEnergy() const { return potential_energy_; }
-    double getTotalEnergy() const { return total_energy_; }
+    double getKineticEnergy() const { return kinetic_energy_; }     // Retorna la última energía cinética calculada.
+    double getPotentialEnergy() const { return potential_energy_; } // Retorna la última energía potencial calculada.
+    double getTotalEnergy() const { return total_energy_; }         // Retorna la última energía total calculada.
 };
