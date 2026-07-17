@@ -7,6 +7,9 @@
 # Binaries (from Makefile)
 /nbody2d
 /nbody2d.exe
+/lab1_distri
+/run_unit
+/run_integration
 
 # Benchmark / analysis outputs
 *.dat

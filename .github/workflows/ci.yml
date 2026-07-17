@@ -39,11 +39,27 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Intenta usar la imagen publicada en GHCR para aprovechar la caché.
-      # Si no existe (primer push, fork sin imagen publicada, etc.), construye localmente desde el Dockerfile.
+      # detecta cambios en el dockerfile al momento de hacer un pull request (para determinar si se debe reconstruir la imagen o usar la guardada en GHCR)
+      - name: Check if Dockerfile changed
+        id: docker_changed
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          if git diff --name-only origin/${{ github.event.pull_request.base.ref }} HEAD | grep -q '^Dockerfile$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Si el PR modifica el Dockerfile, construye localmente para probar el cambio real.
+      # Si no, intenta usar la imagen publicada en GHCR para aprovechar la caché, y solo
+      # construye localmente si no existe (primer push, fork sin imagen publicada, etc.).
       - name: Pull or build base image
         run: |
-          if docker pull ${{ steps.vars.outputs.image }}; then
+          if [ "${{ steps.docker_changed.outputs.changed }}" = "true" ]; then
+            echo "Dockerfile modificado en este PR. Construyendo localmente..."
+            docker build -t ${{ steps.vars.outputs.image }} .
+          elif docker pull ${{ steps.vars.outputs.image }}; then
             echo "Imagen obtenida desde GHCR."
           else
             echo "Imagen no encontrada en GHCR. Construyendo localmente desde el Dockerfile..."
