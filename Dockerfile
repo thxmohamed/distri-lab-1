@@ -1,5 +1,8 @@
-# OS que usará el contenedor
-FROM ubuntu:24.04 
+# OS que usará el contenedor (imagen con toolkit CUDA para compilar kernels .cu)
+FROM nvidia/cuda:12.6.2-devel-ubuntu22.04
+
+# Evita que apt-get quede esperando input interactivo (ej. selección de zona horaria vía tzdata)
+ENV DEBIAN_FRONTEND=noninteractive
 
 # g++ Compilador de C++
 # make Herramienta para automatizar la compilación
