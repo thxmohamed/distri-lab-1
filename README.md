@@ -180,3 +180,27 @@ Los experimentos utilizan los siguientes parámetros por defecto:
 - `energy_plot.png` — K(t), U(t), E(t)
 - `physics_plot.png` — momento lineal ‖P‖(t) y distancia mínima entre pares d_min(t)
 - `energy_drift_plot.png` — deriva relativa de energía para Δt = 0.010, 0.001 y 0.0001
+
+
+## Kernels CUDA de aceleraciones
+
+El cálculo de aceleraciones dispone de dos variantes CUDA:
+
+- `Basic`: asigna un hilo CUDA a cada cuerpo `i`. Cada hilo
+  recorre serialmente todos los cuerpos `j` y escribe únicamente
+  las componentes `ax[i]` y `ay[i]`.
+- `Shared`: utiliza tiles de masas y posiciones en memoria
+  compartida para reutilizar los datos dentro de cada bloque.
+
+Los datos en device utilizan layout SoA:
+
+- `d_mass`
+- `d_x`
+- `d_y`
+- `d_ax`
+- `d_ay`
+
+El índice global se calcula mediante:
+
+```cpp
+i = blockIdx.x * blockDim.x + threadIdx.x;
