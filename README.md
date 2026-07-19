@@ -14,6 +14,27 @@ https://github.com/thxmohamed/distri-lab-1
 - **Macarena García** — Métricas y benchmarks: `MetricsCalculator`, `Benchmark`, mediciones con `omp_get_wtime()`, speedup, eficiencia, ley de Amdahl, propagación de errores
 - **Giuseppe Cavallieri** — Calidad, CI y Visualización: pruebas unitarias e integración (GoogleTest), contenedor Docker, pipeline CI, `Visualizer`, scripts de gráficos, `make test`
 
+### Roles del equipo — Lab 2 (CUDA)
+
+- **Sebastián del Solar Milla** — Rol 1, Kernels CUDA: `computeAccelerationsKernel` (básico) y `computeAccelerationsKernelShared`, lanzadores host, `CUDA_CHECK`, convención de índices y protección de bordes.
+- **Macarena García** — Rol 2, Host/device y memoria: `CudaBuffer` (RAII), layout SoA en device, `cudaMalloc`/`cudaMemcpy`/`cudaFree`, minimizar copias por paso temporal.
+- **Camila Lagos** — Rol 3, Integración y validación: integración de Euler en host tras sincronizar el device, tests CPU vs. GPU con tolerancia documentada, métricas `K`/`U` en GPU (reducción y `atomicAdd`).
+- **Mohamed Al-Marzuk** — Rol 4, Git, releases y agentes: protección de `main`, ramas `feature/*`/`fix/*`, `CHANGELOG.md`, issues del equipo, configuración de los tres agentes de IA (issue [#11](https://github.com/thxmohamed/distri-lab-1/issues/11), pendiente).
+- **Giuseppe Cavallieri** — Rol 5, Calidad, CI y visualización: extensión del pipeline CI, Docker con imagen CUDA, gráficos de speedup, estudio de `blockDim.x` y trayectorias con datos del clúster.
+
+## Flujo Git
+
+- **Rama `main` protegida**: sin push directo (aplica también a administradores); merge únicamente vía pull request.
+  - Requiere que el check de CI `Compile and Test` pase en verde (`required_status_checks`, modo `strict`).
+  - Requiere al menos 1 aprobación humana antes de fusionar; las aprobaciones se invalidan si se agregan nuevos commits (`dismiss_stale_reviews`).
+  - Requiere resolver todas las conversaciones del PR antes de fusionar.
+  - No se permite `force-push` ni borrar `main`.
+- **Ramas de trabajo**: `feature/<nombre>` para funcionalidad nueva, `fix/<nombre>` para correcciones. Se eliminan tras el merge.
+- **Issues**: todo el equipo crea issues en el [tablero de GitHub](https://github.com/thxmohamed/distri-lab-1/issues), con título claro, descripción, etiqueta de rol (`rol-1` a `rol-5`) y persona asignada. Etiquetas adicionales: `bug`, `documentation`, `cuda`, `agent`, `infraestructure`.
+- **Pull requests**: cada PR debe referenciar al menos un issue (`Closes #N` o `Refs #N`) en su descripción.
+- **`CHANGELOG.md`**: sigue el formato [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); se actualiza en cada PR que agregue un cambio notable.
+- **Releases**: se etiquetan con tags anotados (`v1.0.0-lab1` marca la entrega del Lab 1; `v2.0.0-lab2` se etiquetará al cierre del Lab 2).
+
 ## Estructura de Archivos
 
 ```
