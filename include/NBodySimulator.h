@@ -93,6 +93,22 @@ public:
     void simulate(int steps);
 
     // ----------------------------------------------------------------
+    // Integración temporal GPU / CUDA
+    // ----------------------------------------------------------------
+
+    /**
+     * Ejecuta un paso Euler usando aceleraciones calculadas en GPU.
+     */
+    void stepEulerGpu();
+
+    /**
+     * Ejecuta un paso Euler usando kernel CUDA configurable.
+     * @param variant    0 = básico, 1 = shared memory
+     * @param block_size hilos CUDA por bloque
+     */
+    void stepEulerGpu(int variant, int block_size);
+
+    // ----------------------------------------------------------------
     // Energía y métricas físicas
     // ----------------------------------------------------------------
 
@@ -114,6 +130,17 @@ public:
      * @param use_private  true = usa firstprivate explícito, false = no usa firstprivate explícito
      */
     double calculateEnergy(int method, bool use_private);
+
+    /**
+     * Calcula la energía total usando la ruta GPU por defecto.
+     */
+    double calculateEnergyGpu();
+
+    /**
+     * Calcula la energía total usando método GPU configurable.
+     * @param method 0 = reducción en shared memory, 1 = atomicAdd
+     */
+    double calculateEnergyGpu(int method);
 
     /**
      * Calcula la energía cinética total en forma serial de referencia.

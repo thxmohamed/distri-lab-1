@@ -12,6 +12,7 @@ NVCC_HOST_FLAGS ?= -Wall,-Wextra,-fopenmp
 CUDA_BUFFER_TEST_BIN := run_cuda_buffer
 CUDA_DEVICE_STATE_TEST_BIN := run_nbody_device_state
 CUDA_ACCEL_TEST_BIN := run_cuda_accelerations
+CUDA_SIMULATOR_TEST_BIN := run_nbody_simulator_gpu
 TARGET := lab1_distri
 
 # Asigna la extensión correcta al ejecutable dependiendo de si es Windows o no
@@ -56,6 +57,7 @@ clean:
 		$(CUDA_BUFFER_TEST_BIN) \
 		$(CUDA_DEVICE_STATE_TEST_BIN) \
 		$(CUDA_ACCEL_TEST_BIN) \
+		$(CUDA_SIMULATOR_TEST_BIN) \
 		*.o *.dat
 	rm -rf output/
 
@@ -92,9 +94,24 @@ cuda-test:
 		src/model/Particle.cpp \
 		src/model/NBodySystem.cpp
 
+	$(NVCC) $(NVCCFLAGS) \
+		-Xcompiler $(NVCC_HOST_FLAGS) \
+		-o $(CUDA_SIMULATOR_TEST_BIN) \
+		tests/integration/test_NBodySimulatorGpu.cu \
+		src/cuda/NBodySystemGpu.cu \
+		src/cuda/NBodySimulatorGpu.cu \
+		src/cuda/NBodyDeviceState.cu \
+		kernels/accelerations.cu \
+		kernels/metrics.cu \
+		src/model/Particle.cpp \
+		src/model/NBodySystem.cpp \
+		src/simulation/Integrator.cpp \
+		src/simulation/NBodySimulator.cpp
+
 	./$(CUDA_BUFFER_TEST_BIN)
 	./$(CUDA_DEVICE_STATE_TEST_BIN)
 	./$(CUDA_ACCEL_TEST_BIN)
+	./$(CUDA_SIMULATOR_TEST_BIN)
 
 plots:
 	mkdir -p output
