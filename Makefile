@@ -10,6 +10,7 @@ NVCCFLAGS ?= -O3 -std=c++17 -Iinclude -Ikernels
 NVCC_HOST_FLAGS ?= -Wall,-Wextra,-fopenmp
 
 CUDA_BUFFER_TEST_BIN := run_cuda_buffer
+CUDA_DEVICE_STATE_TEST_BIN := run_nbody_device_state
 CUDA_ACCEL_TEST_BIN := run_cuda_accelerations
 TARGET := lab1_distri
 
@@ -52,7 +53,9 @@ $(TARGET_BIN): $(OBJECTS)
 # Borra los archivos generados por la compilación
 clean:
 	rm -f $(TARGET_BIN) $(OBJECTS) run_unit run_integration \
-		$(CUDA_BUFFER_TEST_BIN) $(CUDA_ACCEL_TEST_BIN) \
+		$(CUDA_BUFFER_TEST_BIN) \
+		$(CUDA_DEVICE_STATE_TEST_BIN) \
+		$(CUDA_ACCEL_TEST_BIN) \
 		*.o *.dat
 	rm -rf output/
 
@@ -76,14 +79,21 @@ cuda-test:
 
 	$(NVCC) $(NVCCFLAGS) \
 		-Xcompiler $(NVCC_HOST_FLAGS) \
+		-o $(CUDA_DEVICE_STATE_TEST_BIN) \
+		tests/integration/test_NBodyDeviceState.cu \
+		src/cuda/NBodyDeviceState.cu \
+		src/model/Particle.cpp
+
+	$(NVCC) $(NVCCFLAGS) \
+		-Xcompiler $(NVCC_HOST_FLAGS) \
 		-o $(CUDA_ACCEL_TEST_BIN) \
 		tests/integration/test_accelerations.cu \
 		kernels/accelerations.cu \
-		src/cuda/NBodyDeviceState.cu \
 		src/model/Particle.cpp \
 		src/model/NBodySystem.cpp
 
 	./$(CUDA_BUFFER_TEST_BIN)
+	./$(CUDA_DEVICE_STATE_TEST_BIN)
 	./$(CUDA_ACCEL_TEST_BIN)
 
 plots:
