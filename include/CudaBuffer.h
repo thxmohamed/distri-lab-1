@@ -164,8 +164,4 @@ public:
     bool empty() const noexcept {
         return size_ == 0;
     }
-
-    ~CudaBuffer() noexcept {
-    release();
-    }
 };
