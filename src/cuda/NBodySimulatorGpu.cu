@@ -82,8 +82,7 @@ void NBodySimulator::stepEulerGpu(int variant, int block_size) {
  *  - Retorna la energía total.
  *
  * Descripción:
- *  Ruta GPU por defecto. En este commit delega temporalmente en CPU;
- *  el cálculo CUDA real se agrega en el commit de métricas GPU.
+ *  Ruta GPU por defecto. Usa reducción en shared memory.
  */
 double NBodySimulator::calculateEnergyGpu() {
     return calculateEnergyGpu(0);
@@ -94,14 +93,13 @@ double NBodySimulator::calculateEnergyGpu() {
  * calculateEnergyGpu (method)
  * ---------------------------------------------------------------
  * Entrada:
- *  - method: 0=reducción, 1=atomicAdd.
+ *  - method: 0=reducción en shared memory, 1=atomicAdd.
  *
  * Salida:
- *  - Retorna la energía total.
+ *  - Retorna la energía total calculada como K + U.
  *
  * Descripción:
- *  Implementación temporal para mantener la interfaz compilable antes
- *  de agregar kernels CUDA de energía.
+ *  Calcula energía cinética y potencial usando kernels CUDA.
  */
 double NBodySimulator::calculateEnergyGpu(int method) {
     if (method < 0 || method > 1) {

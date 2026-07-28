@@ -1,6 +1,6 @@
 ## Descripción del Proyecto
 
-Simulador gravitatorio de N cuerpos en 2D implementado en C++ con OpenMP. Cada cuerpo tiene masa, posición y velocidad; las interacciones siguen la ley de gravitación newtoniana con suavizado tipo Plummer para evitar singularidades. El costo por paso temporal es O(N²) y el foco del laboratorio es el análisis de rendimiento paralelo mediante distintas estrategias de OpenMP.
+Simulador gravitatorio de N cuerpos en 2D implementado en C++ con OpenMP y CUDA. Cada cuerpo tiene masa, posición y velocidad; las interacciones siguen la ley de gravitación newtoniana con suavizado tipo Plummer para evitar singularidades. El costo por paso temporal es O(N²) y el foco del laboratorio es el análisis de rendimiento paralelo mediante distintas estrategias de OpenMP.
 
 ## URL del Repositorio
 
@@ -116,6 +116,7 @@ Todos los comandos se ejecutan desde la raíz del proyecto. El compilador requie
 - `make analysis` — ejecuta la simulación física y genera los `.dat` de energía, trayectorias y métricas globales
 - `make plots` — genera los gráficos `.png` a partir de los `.dat` (requiere `make benchmark` y `make analysis` previos)
 - `make clean` — elimina los ejecutables, objetos y archivos generados
+- `make cuda-test` — compila y ejecuta las pruebas CUDA
 
 ## Ejecución
 
@@ -203,25 +204,192 @@ Los experimentos utilizan los siguientes parámetros por defecto:
 - `energy_drift_plot.png` — deriva relativa de energía para Δt = 0.010, 0.001 y 0.0001
 
 
-## Kernels CUDA de aceleraciones
+## Implementación CUDA
 
-El cálculo de aceleraciones dispone de dos variantes CUDA:
+El proyecto incorpora una ruta CUDA para acelerar el cálculo de aceleraciones gravitatorias y algunas métricas globales del simulador N-cuerpos.
 
-- `Basic`: asigna un hilo CUDA a cada cuerpo `i`. Cada hilo
-  recorre serialmente todos los cuerpos `j` y escribe únicamente
-  las componentes `ax[i]` y `ay[i]`.
-- `Shared`: utiliza tiles de masas y posiciones en memoria
-  compartida para reutilizar los datos dentro de cada bloque.
+La versión CPU serial del Laboratorio 1 se mantiene como referencia de corrección para validar los resultados GPU.
 
-Los datos en device utilizan layout SoA:
+### Layout de memoria
+
+Los datos en device utilizan un layout **SoA** (*Structure of Arrays*) para favorecer accesos coalescentes en memoria global:
 
 - `d_mass`
 - `d_x`
 - `d_y`
+- `d_vx`
+- `d_vy`
 - `d_ax`
 - `d_ay`
 
-El índice global se calcula mediante:
+La gestión de memoria se realiza mediante `CudaBuffer`, una clase RAII encargada de reservar, liberar y transferir memoria entre host y device.
+
+### Kernels CUDA de aceleraciones
+
+El cálculo de aceleraciones dispone de dos variantes CUDA:
+
+- `variant = 0`: kernel básico.
+- `variant = 1`: kernel con memoria compartida.
+
+En ambas variantes se asigna un hilo CUDA a cada cuerpo `i`. Cada hilo calcula las componentes `ax[i]` y `ay[i]` recorriendo todos los cuerpos `j != i`.
+
+El índice global se calcula como:
 
 ```cpp
-i = blockIdx.x * blockDim.x + threadIdx.x;
+int i = blockIdx.x * blockDim.x + threadIdx.x;
+```
+
+Para evitar accesos fuera de rango, los kernels verifican:
+
+```cpp
+if (i >= n) {
+    return;
+}
+```
+
+La cantidad de bloques se calcula con división techo:
+
+```cpp
+gridSize = (n + blockSize - 1) / blockSize;
+```
+
+La variante con memoria compartida carga tiles de masas y posiciones en `shared memory`, sincronizando los hilos con `__syncthreads()` antes de utilizar los datos del tile.
+
+Ambas variantes implementan el mismo modelo físico y deben entregar resultados equivalentes dentro de la tolerancia definida para coma flotante.
+
+### Métodos CUDA disponibles
+
+En `NBodySystem` se encuentran disponibles las siguientes sobrecargas:
+
+```cpp
+computeAccelerationsGpu();
+computeAccelerationsGpu(int variant);
+computeAccelerationsGpu(int variant, int block_size);
+```
+
+Donde:
+
+- `variant = 0`: kernel básico.
+- `variant = 1`: kernel con memoria compartida.
+- `block_size`: cantidad de hilos CUDA por bloque.
+
+En `NBodySimulator` se encuentran disponibles:
+
+```cpp
+stepEulerGpu();
+stepEulerGpu(int variant, int block_size);
+calculateEnergyGpu();
+calculateEnergyGpu(int method);
+```
+
+Donde:
+
+- `method = 0`: cálculo de energía mediante reducción por bloque usando `shared memory`.
+- `method = 1`: cálculo de energía mediante acumulación con `atomicAdd`.
+
+### Integración Euler GPU
+
+La integración temporal mantiene el paso Euler en host. El orden usado es:
+
+1. Calcular aceleraciones en GPU.
+2. Sincronizar el device con `cudaDeviceSynchronize()`.
+3. Copiar las aceleraciones calculadas al host.
+4. Aplicar `kick`: actualizar velocidades.
+5. Aplicar `drift`: actualizar posiciones.
+
+Es decir:
+
+```cpp
+v <- v + a * dt;
+r <- r + v * dt;
+```
+
+Este orden permite comparar directamente la ruta GPU con la referencia CPU del Laboratorio 1.
+
+### Energía en GPU
+
+La energía total se calcula como:
+
+```cpp
+E = K + U;
+```
+
+donde:
+
+- `K` corresponde a la energía cinética.
+- `U` corresponde a la energía potencial gravitatoria con suavizado.
+
+El método `calculateEnergyGpu()` soporta dos estrategias:
+
+- `method = 0`: reducción por bloque usando memoria compartida.
+- `method = 1`: acumulación global usando `atomicAdd`.
+
+La variante con `atomicAdd` utiliza una función auxiliar compatible con `double`, para soportar arquitecturas CUDA donde `atomicAdd(double*, double)` no está disponible directamente.
+
+### Validación CPU/GPU
+
+La referencia de corrección es la implementación CPU serial.
+
+Para comparar resultados CPU vs. GPU se utiliza el siguiente criterio:
+
+```cpp
+abs(cpu - gpu) <= atol + rtol * abs(cpu)
+```
+
+Las tolerancias usadas son:
+
+- `rtol = 1e-4`
+- `atol = 1e-8`
+
+Estas tolerancias se aplican sobre:
+
+- aceleraciones;
+- posiciones;
+- velocidades;
+- tiempo acumulado;
+- energía total.
+
+Las pruebas cubren:
+
+- kernel básico vs. CPU;
+- kernel con memoria compartida vs. CPU;
+- integración Euler GPU vs. CPU;
+- varios pasos temporales consecutivos;
+- energía GPU por reducción vs. CPU;
+- energía GPU con `atomicAdd` vs. CPU;
+- validación de parámetros inválidos.
+
+### Pruebas CUDA
+
+Para compilar y ejecutar las pruebas CUDA:
+
+```bash
+make cuda-test
+```
+
+Este target ejecuta:
+
+```text
+run_cuda_buffer
+run_nbody_device_state
+run_cuda_accelerations
+run_nbody_simulator_gpu
+```
+
+Los archivos principales de prueba son:
+
+```text
+tests/integration/test_cuda_buffer.cu
+tests/integration/test_NBodyDeviceState.cu
+tests/integration/test_accelerations.cu
+tests/integration/test_NBodySimulatorGpu.cu
+```
+
+### Resultado esperado
+
+Una ejecución correcta de las pruebas CUDA debe finalizar con:
+
+```text
+TODAS LAS PRUEBAS CUDA PASARON.
+Resultado NBodySimulator GPU: PASS
+```

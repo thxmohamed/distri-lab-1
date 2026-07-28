@@ -280,7 +280,26 @@ bool testInvalidGpuEulerParameters() {
     return passed;
 }
 
-} // namespace
+bool testInvalidGpuEnergyParameters() {
+    NBodySystem system = createSmallSystem();
+    NBodySimulator simulator(&system, kTimeStep);
+
+    bool passed = true;
+
+    try {
+        simulator.calculateEnergyGpu(2);
+        std::cerr
+            << "[FAIL] calculateEnergyGpu no rechazo method invalido\n";
+        passed = false;
+    } catch (const std::invalid_argument&) {
+        std::cout
+            << "[PASS] calculateEnergyGpu rechaza method invalido\n";
+    }
+
+    return passed;
+}
+
+}
 
 int main() {
     std::cout
@@ -298,6 +317,7 @@ int main() {
     passed &= testMultipleEulerStepsMatchCpu();
     passed &= testEnergyGpuMatchesCpu();
     passed &= testInvalidGpuEulerParameters();
+    passed &= testInvalidGpuEnergyParameters();
 
     std::cout
         << "\nResultado NBodySimulator GPU: "
