@@ -4,7 +4,14 @@ CXX ?= g++ # Compilador a usar
 # -Isrc para encontrar los archivos de encabezado
 CXXFLAGS ?= -Wall -Wextra -O3 -fopenmp -std=c++17 -Iinclude
 LDFLAGS  ?= -fopenmp # Bandera para que la librería OpenMP se enlace correctamente
+NVCC ?= nvcc
 
+NVCCFLAGS ?= -O3 -std=c++17 -Iinclude -Ikernels
+NVCC_HOST_FLAGS ?= -Wall,-Wextra,-fopenmp
+
+CUDA_BUFFER_TEST_BIN := run_cuda_buffer
+CUDA_DEVICE_STATE_TEST_BIN := run_nbody_device_state
+CUDA_ACCEL_TEST_BIN := run_cuda_accelerations
 TARGET := lab1_distri
 
 # Asigna la extensión correcta al ejecutable dependiendo de si es Windows o no
@@ -31,7 +38,7 @@ TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp src/simula
 OBJECTS := $(SOURCES:.cpp=.o)
 
 # Indica nombres que no corresponden a archivos reales, sino a tareas o comandos que Make debe ejecutar
-.PHONY: all clean benchmark analysis test plots
+.PHONY: all clean benchmark analysis test cuda-test plots
 
 all: $(TARGET_BIN)
 
@@ -45,7 +52,11 @@ $(TARGET_BIN): $(OBJECTS)
 
 # Borra los archivos generados por la compilación
 clean:
-	rm -f $(TARGET_BIN) $(OBJECTS) run_unit run_integration *.o *.dat
+	rm -f $(TARGET_BIN) $(OBJECTS) run_unit run_integration \
+		$(CUDA_BUFFER_TEST_BIN) \
+		$(CUDA_DEVICE_STATE_TEST_BIN) \
+		$(CUDA_ACCEL_TEST_BIN) \
+		*.o *.dat
 	rm -rf output/
 
 benchmark: $(TARGET_BIN)
@@ -59,6 +70,31 @@ test:
 	$(CXX) $(CXXFLAGS) -o run_integration $(INTEGRATION_SOURCES) $(TEST_LIB) $(LDFLAGS) -lgtest -lpthread
 	./run_unit
 	./run_integration
+
+cuda-test:
+	$(NVCC) $(NVCCFLAGS) \
+		-Xcompiler $(NVCC_HOST_FLAGS) \
+		-o $(CUDA_BUFFER_TEST_BIN) \
+		tests/integration/test_cuda_buffer.cu
+
+	$(NVCC) $(NVCCFLAGS) \
+		-Xcompiler $(NVCC_HOST_FLAGS) \
+		-o $(CUDA_DEVICE_STATE_TEST_BIN) \
+		tests/integration/test_NBodyDeviceState.cu \
+		src/cuda/NBodyDeviceState.cu \
+		src/model/Particle.cpp
+
+	$(NVCC) $(NVCCFLAGS) \
+		-Xcompiler $(NVCC_HOST_FLAGS) \
+		-o $(CUDA_ACCEL_TEST_BIN) \
+		tests/integration/test_accelerations.cu \
+		kernels/accelerations.cu \
+		src/model/Particle.cpp \
+		src/model/NBodySystem.cpp
+
+	./$(CUDA_BUFFER_TEST_BIN)
+	./$(CUDA_DEVICE_STATE_TEST_BIN)
+	./$(CUDA_ACCEL_TEST_BIN)
 
 plots:
 	mkdir -p output
