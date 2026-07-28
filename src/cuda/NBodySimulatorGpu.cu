@@ -1,6 +1,8 @@
 #include "NBodySimulator.h"
 
 #include "Integrator.h"
+#include "NBodyDeviceState.h"
+#include "metrics.cuh"
 
 #include <stdexcept>
 
@@ -107,5 +109,37 @@ double NBodySimulator::calculateEnergyGpu(int method) {
             "NBodySimulator::calculateEnergyGpu: method invalido.");
     }
 
-    return calculateEnergy(method);
+    auto& bodies = system_->getBodies();
+
+    NBodyDeviceState deviceState;
+    deviceState.uploadInitialState(bodies);
+
+    double K = 0.0;
+    double U = 0.0;
+
+    const EnergyKernelMethod energyMethod =
+        method == 0
+            ? EnergyKernelMethod::Reduction
+            : EnergyKernelMethod::Atomic;
+
+    launchCalculateEnergyGpu(
+        deviceState.massData(),
+        deviceState.positionXData(),
+        deviceState.positionYData(),
+        deviceState.velocityXData(),
+        deviceState.velocityYData(),
+        system_->getCount(),
+        system_->getG(),
+        system_->getEpsilon(),
+        energyMethod,
+        256,
+        &K,
+        &U
+    );
+
+    kinetic_energy_ = K;
+    potential_energy_ = U;
+    total_energy_ = K + U;
+
+    return total_energy_;
 }

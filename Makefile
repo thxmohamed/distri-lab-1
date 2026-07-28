@@ -94,9 +94,24 @@ cuda-test:
 		src/model/Particle.cpp \
 		src/model/NBodySystem.cpp
 
+	$(NVCC) $(NVCCFLAGS) \
+		-Xcompiler $(NVCC_HOST_FLAGS) \
+		-o $(CUDA_SIMULATOR_TEST_BIN) \
+		tests/integration/test_NBodySimulatorGpu.cu \
+		src/cuda/NBodySystemGpu.cu \
+		src/cuda/NBodySimulatorGpu.cu \
+		src/cuda/NBodyDeviceState.cu \
+		kernels/accelerations.cu \
+		kernels/metrics.cu \
+		src/model/Particle.cpp \
+		src/model/NBodySystem.cpp \
+		src/simulation/Integrator.cpp \
+		src/simulation/NBodySimulator.cpp
+
 	./$(CUDA_BUFFER_TEST_BIN)
 	./$(CUDA_DEVICE_STATE_TEST_BIN)
 	./$(CUDA_ACCEL_TEST_BIN)
+	./$(CUDA_SIMULATOR_TEST_BIN)
 
 plots:
 	mkdir -p output
