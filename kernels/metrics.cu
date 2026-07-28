@@ -11,6 +11,35 @@
 #include <vector>
 
 /**
+ * @brief atomicAdd compatible para double.
+ */
+__device__ double atomicAddDouble(double* address, double value) {
+#if __CUDA_ARCH__ >= 600
+    return atomicAdd(address, value);
+#else
+    unsigned long long int* addressAsUll =
+        reinterpret_cast<unsigned long long int*>(address);
+
+    unsigned long long int old = *addressAsUll;
+    unsigned long long int assumed;
+
+    do {
+        assumed = old;
+
+        old = atomicCAS(
+            addressAsUll,
+            assumed,
+            __double_as_longlong(
+                value + __longlong_as_double(assumed)
+            )
+        );
+    } while (assumed != old);
+
+    return __longlong_as_double(old);
+#endif
+}
+
+/**
  * @brief Kernel CUDA para calcular energía usando reducción por bloque.
  */
 __global__ void calculateEnergyReductionKernel(
@@ -121,8 +150,8 @@ __global__ void calculateEnergyAtomicKernel(
             distance;
     }
 
-    atomicAdd(d_K, kinetic);
-    atomicAdd(d_U, potential);
+    atomicAddDouble(d_K, kinetic);
+    atomicAddDouble(d_U, potential);
 }
 
 /**
