@@ -123,6 +123,28 @@ public:
     void computeAccelerationsMode(int mode);
 
     // ----------------------------------------------------------------
+    // Cálculo de aceleraciones GPU / CUDA
+    // ----------------------------------------------------------------
+
+    /**
+     * Calcula aceleraciones en GPU usando kernel básico y block size 256.
+     */
+    void computeAccelerationsGpu();
+
+    /**
+     * Calcula aceleraciones en GPU usando variante configurable.
+     * @param variant 0 = básico, 1 = shared memory
+     */
+    void computeAccelerationsGpu(int variant);
+
+    /**
+     * Calcula aceleraciones en GPU usando variante y block size configurables.
+     * @param variant    0 = básico, 1 = shared memory
+     * @param block_size hilos CUDA por bloque
+     */
+    void computeAccelerationsGpu(int variant, int block_size);
+
+    // ----------------------------------------------------------------
     // Inicialización de condiciones iniciales
     // ----------------------------------------------------------------
 

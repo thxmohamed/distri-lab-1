@@ -12,6 +12,7 @@ NVCC_HOST_FLAGS ?= -Wall,-Wextra,-fopenmp
 CUDA_BUFFER_TEST_BIN := run_cuda_buffer
 CUDA_DEVICE_STATE_TEST_BIN := run_nbody_device_state
 CUDA_ACCEL_TEST_BIN := run_cuda_accelerations
+CUDA_SIMULATOR_TEST_BIN := run_nbody_simulator_gpu
 TARGET := lab1_distri
 
 # Asigna la extensión correcta al ejecutable dependiendo de si es Windows o no
@@ -56,6 +57,7 @@ clean:
 		$(CUDA_BUFFER_TEST_BIN) \
 		$(CUDA_DEVICE_STATE_TEST_BIN) \
 		$(CUDA_ACCEL_TEST_BIN) \
+		$(CUDA_SIMULATOR_TEST_BIN) \
 		*.o *.dat
 	rm -rf output/
 
