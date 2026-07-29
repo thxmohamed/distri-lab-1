@@ -19,7 +19,7 @@ https://github.com/thxmohamed/distri-lab-1
 - **Sebastián del Solar Milla** — Rol 1, Kernels CUDA: `computeAccelerationsKernel` (básico) y `computeAccelerationsKernelShared`, lanzadores host, `CUDA_CHECK`, convención de índices y protección de bordes.
 - **Macarena García** — Rol 2, Host/device y memoria: `CudaBuffer` (RAII), layout SoA en device, `cudaMalloc`/`cudaMemcpy`/`cudaFree`, minimizar copias por paso temporal.
 - **Camila Lagos** — Rol 3, Integración y validación: integración de Euler en host tras sincronizar el device, tests CPU vs. GPU con tolerancia documentada, métricas `K`/`U` en GPU (reducción y `atomicAdd`).
-- **Mohamed Al-Marzuk** — Rol 4, Git, releases y agentes: protección de `main`, ramas `feature/*`/`fix/*`, `CHANGELOG.md`, issues del equipo, configuración de los tres agentes de IA (issue [#11](https://github.com/thxmohamed/distri-lab-1/issues/11), pendiente).
+- **Mohamed Al-Marzuk** — Rol 4, Git, releases y agentes: protección de `main`, ramas `feature/*`/`fix/*`, `CHANGELOG.md`, issues del equipo, configuración de los tres agentes de IA (ver sección [Agentes de IA](#agentes-de-ia)).
 - **Giuseppe Cavallieri** — Rol 5, Calidad, CI y visualización: extensión del pipeline CI, Docker con imagen CUDA, gráficos de speedup, estudio de `blockDim.x` y trayectorias con datos del clúster.
 
 ## Flujo Git
@@ -34,6 +34,27 @@ https://github.com/thxmohamed/distri-lab-1
 - **Pull requests**: cada PR debe referenciar al menos un issue (`Closes #N` o `Refs #N`) en su descripción.
 - **`CHANGELOG.md`**: sigue el formato [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); se actualiza en cada PR que agregue un cambio notable.
 - **Releases**: se etiquetan con tags anotados (`v1.0.0-lab1` marca la entrega del Lab 1; `v2.0.0-lab2` se etiquetará al cierre del Lab 2).
+
+## Agentes de IA
+
+El repositorio usa [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) para correr tres agentes en CI. Los prompts/instrucciones de cada uno viven versionados en [`scripts/agents/`](scripts/agents/); los workflows que los disparan están en [`.github/workflows/`](.github/workflows/).
+
+| Agente | Workflow | Frecuencia | Criterio mecánico (arregla solo) | Criterio humano (solo comenta/issue) |
+|---|---|---|---|---|
+| Documentador | [`agent-documentation.yml`](.github/workflows/agent-documentation.yml) | Semanal (lunes) + al fusionar a `main` + manual | Typo, enlace roto, sección con plantilla obvia, entrada de CHANGELOG faltante para un commit ya claro | Explicar diseño/decisiones de arquitectura |
+| Revisor de bugs | [`agent-bug-review.yml`](.github/workflows/agent-bug-review.yml) | Diaria (cron) + manual | Falta `CUDA_CHECK`, tolerancia de test desalineada del README, TODO sin issue | Cambios a física, API pública o lógica de kernels |
+| Revisor de MR | [`agent-mr-review.yml`](.github/workflows/agent-mr-review.yml) | Al terminar el CI de cada PR (`workflow_run` sobre el workflow `CI`) | Solo docs/formato/tests en verde, vinculado a un issue | Cambia semántica física o firma pública sin issue, o CI en rojo |
+
+Reglas comunes a los tres agentes (ver `scripts/agents/*.md` para el detalle completo):
+
+- Nunca pushean directo a `main` (además, la protección de rama lo bloquearía igualmente).
+- El agente documentador y el revisor de bugs solo abren PRs mecánicos vía rama `agent/<slug>` + `gh pr create`, etiquetados `agent:auto-fix`; para hallazgos que requieren criterio, solo abren un issue con `Requiere intervención humana: <motivo>`.
+- El revisor de MR **nunca** ejecuta `gh pr merge`: solo comenta la clasificación del PR.
+- Tope de 5 issues automáticos por agente por ejecución sin revisión humana.
+
+### Requisito para correr los agentes
+
+Los tres workflows necesitan el secret `ANTHROPIC_API_KEY` configurado en el repositorio (Settings → Secrets and variables → Actions). Sin ese secret, las ejecuciones fallan al llamar a la acción.
 
 ## Estructura de Archivos
 

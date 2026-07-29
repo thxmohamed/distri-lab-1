@@ -1,0 +1,60 @@
+name: Agent - Revisor de MR
+
+# Se dispara cuando el pipeline de CI ("Compile and Test", definido en
+# ci.yml con name: CI) termina de correr sobre un pull request. Nunca
+# fusiona el PR: solo comenta su clasificacion (mecanico vs. requiere
+# revision humana).
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  mr-review-agent:
+    name: Comentar PR tras CI
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Resolver numero de PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" \
+            --head "${{ github.event.workflow_run.head_branch }}" \
+            --json number --jq '.[0].number')
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Cargar prompt del agente
+        id: load_prompt
+        run: |
+          {
+            echo 'body<<AGENT_PROMPT_EOF'
+            cat scripts/agents/mr-reviewer.md
+            echo AGENT_PROMPT_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ejecutar agente revisor de MR
+        if: steps.pr.outputs.number != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.pr.outputs.number }}
+            CI CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+
+            ${{ steps.load_prompt.outputs.body }}
+          claude_args: |
+            --allowedTools "Read,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*)"

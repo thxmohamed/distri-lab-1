@@ -9,8 +9,20 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Added
 
-- Kernels CUDA para `computeAccelerations` (variante básica) y tests de equivalencia.
+- Kernels CUDA para `computeAccelerations`, variante básica y variante con memoria
+  compartida (`computeAccelerationsKernelShared`), con tests de equivalencia CPU/GPU.
 - Imagen Docker base migrada a `nvidia/cuda` para compilar y ejecutar el simulador con GPU.
+- `CudaBuffer<T>` (RAII) para `cudaMalloc`/`cudaMemcpy`/`cudaFree` y `NBodyDeviceState` con
+  layout SoA en device (masas, posiciones, velocidades, aceleraciones).
+- Integración de Euler en host (`stepEulerGpu`) usando aceleraciones calculadas en GPU, y
+  cálculo de energía en GPU (`calculateEnergyGpu`) con reducción en `__shared__` y variante
+  con `atomicAdd` (soporte `atomicAdd` para `double` vía `atomicCAS`).
+- Tests de validación CPU vs. GPU (kernel básico, kernel shared, múltiples pasos, energía)
+  con tolerancia `rtol = 1e-4`, `atol = 1e-8`.
+- `CHANGELOG.md` (este archivo) y documentación del flujo Git (protección de `main`, ramas,
+  issues, releases) en el README.
+- Tres agentes de IA en CI (`anthropics/claude-code-action`): documentador, revisor de bugs
+  y revisor de MR, con prompts versionados en `scripts/agents/`.
 
 ### Changed
 

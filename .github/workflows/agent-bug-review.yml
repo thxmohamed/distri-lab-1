@@ -1,0 +1,51 @@
+name: Agent - Revisor de bugs
+
+# Corre diariamente sobre main (cron en CI), ademas de poder dispararse
+# manualmente para dejar evidencia antes de la entrega.
+on:
+  schedule:
+    - cron: "0 9 * * *" # Todos los dias 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  bug-review-agent:
+    name: Revisar regresiones y robustez
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configurar git para commits del agente
+        run: |
+          git config user.name "bug-review-agent[bot]"
+          git config user.email "bug-review-agent@users.noreply.github.com"
+
+      - name: Cargar prompt del agente
+        id: load_prompt
+        run: |
+          {
+            echo 'body<<AGENT_PROMPT_EOF'
+            cat scripts/agents/bug-reviewer.md
+            echo AGENT_PROMPT_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ejecutar agente revisor de bugs
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            RAMA: main
+
+            ${{ steps.load_prompt.outputs.body }}
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git log:*),Bash(git diff:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue list:*),Bash(gh pr create:*)"
