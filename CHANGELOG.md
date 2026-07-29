@@ -21,8 +21,10 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
   con tolerancia `rtol = 1e-4`, `atol = 1e-8`.
 - `CHANGELOG.md` (este archivo) y documentación del flujo Git (protección de `main`, ramas,
   issues, releases) en el README.
-- Tres agentes de IA en CI (`anthropics/claude-code-action`): documentador, revisor de bugs
-  y revisor de MR, con prompts versionados en `scripts/agents/`.
+- Tres agentes de IA en CI usando GitHub Models (`actions/ai-inference`, sin costo ni secrets
+  adicionales): documentador, revisor de bugs y revisor de MR. Cada uno responde en JSON
+  estructurado y un script (`scripts/agents/apply_edits.py`) valida y aplica la acción
+  resultante (issue, PR mecánico acotado, o comentario de intervención humana).
 
 ### Changed
 

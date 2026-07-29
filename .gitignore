@@ -23,3 +23,7 @@ output/
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# Python (scripts/agents/apply_edits.py)
+__pycache__/
+*.pyc
