@@ -205,6 +205,27 @@ Los experimentos utilizan los siguientes parámetros por defecto:
 - `physics_plot.png` — momento lineal ‖P‖(t) y distancia mínima entre pares d_min(t)
 - `energy_drift_plot.png` — deriva relativa de energía para Δt = 0.010, 0.001 y 0.0001
 
+### Benchmarks y gráficos GPU (Lab 2)
+
+`make benchmark-gpu` recorre la matriz obligatoria N∈{256,512,1024,2000} × variante{básica,shared}
+× blockDim.x∈{64,128,256,512,1024}, con ≥100 pasos y ≥10 repeticiones por punto, y genera:
+
+- `benchmark_results.dat` — CPU (OpenMP) vs. GPU end-to-end y speedup, para cada N y variante, a
+  blockDim.x=256 (por defecto)
+- `blockdim_study.dat` — tiempo kernel-only y end-to-end para cada combinación N/variante/blockDim.x
+- `cluster_run.log` — `nvidia-smi`, `nvcc --version` y semilla usada, para documentar el entorno
+
+Pensado para correrse en el clúster DIINF — las mediciones finales de
+rendimiento no se aceptan desde CI (ver sección 12 del enunciado Lab 2).
+
+`make plots-gpu` genera en `output/`:
+
+- `gpu_speedup_vs_n.png` — speedup GPU vs. CPU vs. N, ambas variantes
+- `gpu_transfer_impact.png` — tiempo kernel-only vs. end-to-end vs. N, por variante
+- `gpu_blockdim_study.png` — tiempo kernel-only vs. blockDim.x a N=2000, ambas variantes
+- `gpu_amdahl_plot.png` — curva de Amdahl GPU (blockDim.x como sustituto de p)
+- `gpu_variant_comparison.png` — básica vs. shared memory, mismo N
+- Reutiliza `trajectories_plot.png`/`energy_plot.png` del Lab 1 sin cambios
 
 ## Implementación CUDA
 
@@ -214,7 +235,7 @@ La versión CPU serial del Laboratorio 1 se mantiene como referencia de correcci
 
 ### Layout de memoria
 
-Los datos en device utilizan un layout **SoA** (*Structure of Arrays*) para favorecer accesos coalescentes en memoria global:
+Los datos en device utilizan un layout **SoA** (_Structure of Arrays_) para favorecer accesos coalescentes en memoria global:
 
 - `d_mass`
 - `d_x`

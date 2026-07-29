@@ -40,7 +40,7 @@ TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp src/simula
 OBJECTS := $(SOURCES:.cpp=.o)
 
 # Indica nombres que no corresponden a archivos reales, sino a tareas o comandos que Make debe ejecutar
-.PHONY: all clean benchmark analysis test cuda-test benchmark-gpu plots
+.PHONY: all clean benchmark analysis test cuda-test benchmark-gpu plots plots-gpu
 
 all: $(TARGET_BIN)
 
@@ -143,3 +143,16 @@ plots:
 	python3 scripts/plot_physics.py
 	python3 scripts/plot_energy_drift.py
 	python3 scripts/plot_clauses.py
+
+# Graficos GPU del Lab 2 (seccion 11 del enunciado). Requieren los .dat
+# generados por `make benchmark-gpu` en el clúster DIINF; separado de
+# `plots` para no depender de ellos al graficar solo el Lab 1.
+plots-gpu:
+	mkdir -p output
+	python3 scripts/plot_gpu_speedup_vs_n.py
+	python3 scripts/plot_gpu_transfer_impact.py
+	python3 scripts/plot_gpu_blockdim.py
+	python3 scripts/plot_gpu_amdahl.py
+	python3 scripts/plot_gpu_variant_comparison.py
+	python3 scripts/plot_trajectories.py
+	python3 scripts/plot_energy.py
