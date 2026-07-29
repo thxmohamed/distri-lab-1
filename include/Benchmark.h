@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "NBodySimulator.h"
 #include "NBodySystem.h"
 
@@ -31,6 +33,10 @@ struct Result {
 
 class Benchmark {
 public:
+    // Semilla fija usada en todos los experimentos de benchmark, para que las
+    // corridas sean reproducibles y quede documentada en los .dat generados.
+    static constexpr int kSimulationSeed = 42;
+
     //Mide el tiempo de la simulación completa para N cuerpos y steps pasos.
     static Result measureSimulation(int N, int steps, int repetitions);
     //Mide únicamente el cálculo de aceleraciones, variando schedule y chunk.
@@ -51,6 +57,13 @@ public:
 
     // Estima la fracción serial f a partir de un speedup medido Sp y la Ley de Amdahl.
     static double amdahlSerialFraction(double Sp, int p);
+    /**
+     * Estima la fracción serial f ajustando la Ley de Amdahl con todos los
+     * puntos (hilos, speedup) medidos, en vez de un único punto. Evita que
+     * el ajuste dependa solo del punto con mayor p (más sensible al ruido).
+     */
+    static double amdahlSerialFractionFit(const std::vector<int>& threads,
+                                          const std::vector<double>& speedups);
     // Calcula el speedup teórico según la Ley de Amdahl para una fracción serial f y p hilos.
     static double amdahlSpeedup(double f, int p);
 

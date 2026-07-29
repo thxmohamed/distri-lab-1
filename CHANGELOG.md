@@ -21,6 +21,16 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 - CI: se usa `git diff` de dos puntos contra la rama base del PR para evitar el error
   "no merge base" al comparar historiales.
+- Benchmark: `Benchmark::amdahlSerialFractionFit` reemplaza la estimación de la fracción
+  serial `f` basada en un único punto (el último de la lista de hilos) por un ajuste que
+  usa todos los puntos medidos (hilos, speedup), corrigiendo la sensibilidad al ruido en
+  mediciones con p elevado (observación de corrección del Lab 1).
+- `scaling_analysis.dat` ahora incluye el error propagado del speedup medido por punto, y
+  `plot_amdahl.py` grafica barras de error usando ese valor (antes se calculaba el error
+  pero se descartaba antes de llegar al gráfico; observación de corrección del Lab 1).
+- Se documenta la semilla fija usada en los experimentos de benchmark (`Benchmark::kSimulationSeed`),
+  antes hardcodeada sin registro; ahora se escribe como cabecera en los `.dat` generados
+  (observación de corrección del Lab 1).
 
 ## [1.0.0-lab1] - 2026-05-11
 
