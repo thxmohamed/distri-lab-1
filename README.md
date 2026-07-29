@@ -19,7 +19,7 @@ https://github.com/thxmohamed/distri-lab-1
 - **Sebastián del Solar Milla** — Rol 1, Kernels CUDA: `computeAccelerationsKernel` (básico) y `computeAccelerationsKernelShared`, lanzadores host, `CUDA_CHECK`, convención de índices y protección de bordes.
 - **Macarena García** — Rol 2, Host/device y memoria: `CudaBuffer` (RAII), layout SoA en device, `cudaMalloc`/`cudaMemcpy`/`cudaFree`, minimizar copias por paso temporal.
 - **Camila Lagos** — Rol 3, Integración y validación: integración de Euler en host tras sincronizar el device, tests CPU vs. GPU con tolerancia documentada, métricas `K`/`U` en GPU (reducción y `atomicAdd`).
-- **Mohamed Al-Marzuk** — Rol 4, Git, releases y agentes: protección de `main`, ramas `feature/*`/`fix/*`, `CHANGELOG.md`, issues del equipo, configuración de los tres agentes de IA (issue [#11](https://github.com/thxmohamed/distri-lab-1/issues/11), pendiente).
+- **Mohamed Al-Marzuk** — Rol 4, Git, releases y agentes: protección de `main`, ramas `feature/*`/`fix/*`, `CHANGELOG.md`, issues del equipo, configuración de los tres agentes de IA (ver sección [Agentes de IA](#agentes-de-ia)).
 - **Giuseppe Cavallieri** — Rol 5, Calidad, CI y visualización: extensión del pipeline CI, Docker con imagen CUDA, gráficos de speedup, estudio de `blockDim.x` y trayectorias con datos del clúster.
 
 ## Flujo Git
@@ -34,6 +34,34 @@ https://github.com/thxmohamed/distri-lab-1
 - **Pull requests**: cada PR debe referenciar al menos un issue (`Closes #N` o `Refs #N`) en su descripción.
 - **`CHANGELOG.md`**: sigue el formato [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); se actualiza en cada PR que agregue un cambio notable.
 - **Releases**: se etiquetan con tags anotados (`v1.0.0-lab1` marca la entrega del Lab 1; `v2.0.0-lab2` se etiquetará al cierre del Lab 2).
+
+## Agentes de IA
+
+El repositorio usa [GitHub Models](https://github.com/marketplace/models) vía la acción oficial [`actions/ai-inference`](https://github.com/actions/ai-inference) para correr tres agentes en CI. Es gratuito para este repositorio (público) y se autentica con el `GITHUB_TOKEN` propio de cada workflow — no requiere ningún secret ni cuenta adicional.
+
+A diferencia de un agente autónomo tipo Claude Code, `ai-inference` es una **llamada de inferencia única**: no ejecuta shell ni edita archivos por sí sola. El diseño acá es "el modelo clasifica en JSON estructurado → un script determinista ejecuta la acción":
+
+1. El workflow reúne contexto (README/CHANGELOG, diffs recientes, diff del PR, etc.) con `git`/`gh`.
+2. Se llama al modelo con el prompt versionado en `scripts/agents/*.prompt.yml`, que fuerza una respuesta JSON (`responseFormat: json_schema`).
+3. Para el documentador y el revisor de bugs, [`scripts/agents/apply_edits.py`](scripts/agents/apply_edits.py) valida la respuesta: solo aplica un "fix mecánico" si el archivo está en una lista blanca y cada reemplazo de texto propuesto aparece **exactamente una vez** en el archivo; si no, degrada automáticamente a abrir un issue en vez de arriesgar corromper un archivo (ver el docstring del script para el detalle). Esta es una limitación deliberada del diseño: sin GPU ni compilador en el runner, no hay forma de verificar que un parche a `kernels/`, `src/` o `include/` sea correcto, así que esos casos siempre terminan en issue o en "requiere intervención humana", nunca en un PR automático.
+4. El workflow ejecuta la acción resultante (`gh issue create`, `gh pr create`, o `gh pr comment`) con `gh`.
+
+| Agente | Workflow | Prompt | Frecuencia | Criterio mecánico (arregla solo) | Criterio humano (solo comenta/issue) |
+|---|---|---|---|---|---|
+| Documentador | [`agent-documentation.yml`](.github/workflows/agent-documentation.yml) | [`documentador.prompt.yml`](scripts/agents/documentador.prompt.yml) | Semanal (lunes) + al fusionar a `main` + manual | Typo, enlace roto, entrada de CHANGELOG faltante — como reemplazo de texto exacto en `README.md`/`CHANGELOG.md` | Explicar diseño/decisiones de arquitectura |
+| Revisor de bugs | [`agent-bug-review.yml`](.github/workflows/agent-bug-review.yml) | [`bug-reviewer.prompt.yml`](scripts/agents/bug-reviewer.prompt.yml) | Diaria (cron) + manual | Tolerancia de test desalineada del README — solo si el archivo está bajo `tests/` | Falta `CUDA_CHECK`, TODO sin issue, o cualquier cambio a física/API pública/lógica de kernels |
+| Revisor de MR | [`agent-mr-review.yml`](.github/workflows/agent-mr-review.yml) | [`mr-reviewer.prompt.yml`](scripts/agents/mr-reviewer.prompt.yml) | Al terminar el CI de cada PR (`workflow_run` sobre el workflow `CI`) | Solo docs/formato/tests en verde, vinculado a un issue | Cambia semántica física o firma pública sin issue, o CI en rojo |
+
+Reglas comunes a los tres agentes:
+
+- Nunca pushean directo a `main` (además, la protección de rama lo bloquearía igualmente).
+- El documentador y el revisor de bugs solo abren PRs mecánicos vía rama `agent/<slug>-<run_id>` + `gh pr create`, etiquetados `agent:auto-fix`; para hallazgos que requieren criterio, solo abren un issue con `Requiere intervención humana: <motivo>`.
+- El revisor de MR **nunca** ejecuta `gh pr merge`: solo comenta la clasificación del PR.
+- Cada ejecución reporta como máximo un hallazgo (un issue o un PR), muy por debajo del tope de 5 issues automáticos por semana sin revisión humana.
+
+### Requisito para correr los agentes
+
+Ninguno adicional: los tres workflows solo necesitan `permissions: models: read` (ya configurado) y el `GITHUB_TOKEN` que GitHub Actions provee automáticamente. Si `models: read` falla con un error de permisos, revisar Settings → Copilot → Model providers (o el equivalente a nivel de organización) para confirmar que el acceso a GitHub Models esté habilitado.
 
 ## Estructura de Archivos
 

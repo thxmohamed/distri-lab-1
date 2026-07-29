@@ -1,0 +1,96 @@
+name: Agent - Revisor de MR
+
+# Se dispara cuando el pipeline de CI ("Compile and Test", definido en
+# ci.yml con name: CI) termina de correr sobre un pull request. Nunca
+# fusiona el PR: solo comenta su clasificacion (mecanico y mergeable, o
+# requiere revision humana).
+#
+# Motor: GitHub Models (actions/ai-inference), gratuito.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+jobs:
+  mr-review-agent:
+    name: Comentar PR tras CI
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Resolver numero de PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" \
+            --head "${{ github.event.workflow_run.head_branch }}" \
+            --json number --jq '.[0].number')
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Reunir contexto del PR
+        id: gather
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          CONTEXT_FILE="$RUNNER_TEMP/context.txt"
+          {
+            echo "## CI_CONCLUSION: $CI_CONCLUSION"
+            echo
+            echo "## Titulo y descripcion del PR"
+            gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
+              --json title,body --jq '"# " + .title + "\n\n" + (.body // "(sin descripcion)")'
+            echo
+            echo "## Diff del PR"
+            gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}"
+          } > "$CONTEXT_FILE"
+          echo "path=$CONTEXT_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Ejecutar agente revisor de MR
+        id: inference
+        if: steps.pr.outputs.number != ''
+        uses: actions/ai-inference@v1
+        with:
+          prompt-file: scripts/agents/mr-reviewer.prompt.yml
+          file_input: |
+            context: ${{ steps.gather.outputs.path }}
+
+      - name: Comentar PR con la clasificacion
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          RESPONSE_FILE: ${{ steps.inference.outputs.response-file }}
+        run: |
+          set -euo pipefail
+          CLASSIFICATION=$(jq -r '.classification' "$RESPONSE_FILE")
+          REASON=$(jq -r '.reason' "$RESPONSE_FILE")
+
+          HEADER="✅ Mecánico y mergeable"
+          if [ "$CLASSIFICATION" != "mechanical_mergeable" ]; then
+            HEADER="⚠️ Requiere revisión humana"
+          fi
+
+          COMMENT_FILE="$RUNNER_TEMP/comment.md"
+          {
+            printf '**Agente revisor de MR — %s**\n\n' "$HEADER"
+            printf '%s\n\n' "$REASON"
+            echo "_Comentario generado automáticamente por scripts/agents/mr-reviewer.prompt.yml. Este agente nunca fusiona el PR: la decisión final es siempre de una persona del equipo._"
+          } > "$COMMENT_FILE"
+
+          gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body-file "$COMMENT_FILE"
