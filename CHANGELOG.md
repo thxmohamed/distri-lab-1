@@ -11,11 +11,22 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 - Kernels CUDA para `computeAccelerations` (variante básica) y tests de equivalencia.
 - Imagen Docker base migrada a `nvidia/cuda` para compilar y ejecutar el simulador con GPU.
+- `Benchmark::benchmarkKernelOnly`, `Benchmark::benchmarkEndToEnd` y `Benchmark::compareCpuGpu`
+  (`benchmarks/BenchmarkGpu.cu`) para medir el cálculo de aceleraciones en GPU sin y con
+  transferencias host/device, y compararlo contra la ruta CPU para el mismo N.
+- `make benchmark-gpu`: compila y corre `benchmarks/benchmark_gpu_main.cu`, el driver que
+  recorre la matriz obligatoria N x variante x blockDim.x del enunciado Lab 2 y genera
+  `benchmark_results.dat`, `blockdim_study.dat` y `cluster_run.log` (con `nvidia-smi` y
+  `nvcc --version`). Pensado para correr una sola vez en el clúster DIINF, no en CI.
 
 ### Changed
 
 - CI: reconstruye la imagen Docker localmente cuando el PR modifica el `Dockerfile`, en vez
   de depender siempre de la imagen publicada en GHCR.
+- El `.dat` de benchmark de la simulación completa CPU (Lab 1) se renombra de
+  `benchmark_results.dat` a `benchmark_results_lab1.dat`, para no chocar con el
+  `benchmark_results.dat` de la matriz de benchmarks GPU del Lab 2 (esquema de columnas
+  distinto: N/variante/blockDim.x en vez de hilos).
 
 ### Fixed
 

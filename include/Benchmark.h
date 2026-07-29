@@ -31,6 +31,19 @@ struct Result {
     double stddev; // Desviación estándar muestral de los tiempos medidos.
 };
 
+/**
+ * Estructura: CpuGpuComparison
+ * ----------------------------
+ * Resultado de comparar el mismo cálculo en CPU (OpenMP) y GPU (CUDA):
+ * tiempos de ambos y el speedup GPU vs CPU con su error propagado.
+ */
+struct CpuGpuComparison {
+    Result cpu;
+    Result gpu;
+    double speedup;
+    double speedupError;
+};
+
 class Benchmark {
 public:
     // Semilla fija usada en todos los experimentos de benchmark, para que las
@@ -82,4 +95,34 @@ public:
      * variant = 0 barrier, 1 nowait, 2 task + single, 3 parallel for.
      */
     static Result measureAdvancedSyncVariant(int N, int steps, int reps, int variant);
+
+    // ----------------------------------------------------------------
+    // Benchmarks GPU / CUDA (implementados en benchmarks/BenchmarkGpu.cu)
+    // ----------------------------------------------------------------
+
+    /**
+     * Mide solo el cálculo de aceleraciones en GPU (kernel + sincronización),
+     * sin incluir transferencias host/device: el estado se sube una vez antes
+     * de cronometrar y se descarga después.
+     * @param variant 0 = básico, 1 = shared memory
+     */
+    static Result benchmarkKernelOnly(int N, int variant, int block_size,
+                                      int steps, int repetitions);
+
+    /**
+     * Mide el cálculo de aceleraciones en GPU de extremo a extremo, incluyendo
+     * las transferencias host/device de cada llamada (subida de estado,
+     * ejecución del kernel, sincronización y descarga de resultados).
+     * @param variant 0 = básico, 1 = shared memory
+     */
+    static Result benchmarkEndToEnd(int N, int variant, int block_size,
+                                    int steps, int repetitions);
+
+    /**
+     * Compara el mismo cálculo de aceleraciones en CPU (paralelo, referencia
+     * static/chunk=32) contra GPU end-to-end, para el mismo N.
+     * @param variant 0 = básico, 1 = shared memory (usado en la ruta GPU)
+     */
+    static CpuGpuComparison compareCpuGpu(int N, int variant, int block_size,
+                                          int steps, int repetitions);
 };

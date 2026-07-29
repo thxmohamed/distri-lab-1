@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
             // =====================================================
             // 1) Benchmark de simulacion completa
             // =====================================================
-            std::ofstream sim_out("benchmark_results.dat");
+            std::ofstream sim_out("benchmark_results_lab1.dat");
             sim_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
             sim_out << "# threads mean stddev speedup speedup_error efficiency efficiency_error\n";
 
@@ -258,7 +258,7 @@ int main(int argc, char** argv) {
             adv_out.close();
 
             std::cout << "\nArchivos generados:\n";
-            std::cout << " - benchmark_results.dat\n";
+            std::cout << " - benchmark_results_lab1.dat\n";
             std::cout << " - accelerations_results.dat\n";
             std::cout << " - schedule_results.dat\n";
             std::cout << " - scaling_analysis.dat\n";

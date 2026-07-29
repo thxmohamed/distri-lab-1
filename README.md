@@ -179,7 +179,9 @@ Los experimentos utilizan los siguientes parámetros por defecto:
 
 `make benchmark` genera:
 
-- `benchmark_results.dat` — speedup y eficiencia de la simulación completa vs. número de hilos
+- `benchmark_results_lab1.dat` — speedup y eficiencia de la simulación completa vs. número de hilos
+  (renombrado desde `benchmark_results.dat` del Lab 1 para no chocar con el `benchmark_results.dat`
+  de la matriz GPU del Lab 2, que usa un esquema de columnas distinto)
 - `accelerations_results.dat` — speedup y eficiencia solo de `computeAccelerations` vs. número de hilos
 - `schedule_results.dat` — tiempo vs. chunk para schedules static, dynamic y guided
 - `scaling_analysis.dat` — speedup medido y predicción de Amdahl

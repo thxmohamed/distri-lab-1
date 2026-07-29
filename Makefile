@@ -13,6 +13,7 @@ CUDA_BUFFER_TEST_BIN := run_cuda_buffer
 CUDA_DEVICE_STATE_TEST_BIN := run_nbody_device_state
 CUDA_ACCEL_TEST_BIN := run_cuda_accelerations
 CUDA_SIMULATOR_TEST_BIN := run_nbody_simulator_gpu
+GPU_BENCHMARK_BIN := run_benchmark_gpu
 TARGET := lab1_distri
 
 # Asigna la extensión correcta al ejecutable dependiendo de si es Windows o no
@@ -39,7 +40,7 @@ TEST_LIB          := src/model/Particle.cpp src/model/NBodySystem.cpp src/simula
 OBJECTS := $(SOURCES:.cpp=.o)
 
 # Indica nombres que no corresponden a archivos reales, sino a tareas o comandos que Make debe ejecutar
-.PHONY: all clean benchmark analysis test cuda-test plots
+.PHONY: all clean benchmark analysis test cuda-test benchmark-gpu plots
 
 all: $(TARGET_BIN)
 
@@ -58,7 +59,8 @@ clean:
 		$(CUDA_DEVICE_STATE_TEST_BIN) \
 		$(CUDA_ACCEL_TEST_BIN) \
 		$(CUDA_SIMULATOR_TEST_BIN) \
-		*.o *.dat
+		$(GPU_BENCHMARK_BIN) \
+		*.o *.dat *.log
 	rm -rf output/
 
 benchmark: $(TARGET_BIN)
@@ -112,6 +114,24 @@ cuda-test:
 	./$(CUDA_DEVICE_STATE_TEST_BIN)
 	./$(CUDA_ACCEL_TEST_BIN)
 	./$(CUDA_SIMULATOR_TEST_BIN)
+
+# Compila el driver de la matriz de benchmarks GPU (N x variante x blockDim.x).
+# Pensado para correr en el clúster DIINF, no en CI (mediciones de performance
+# finales no se aceptan desde CI, ver sección 12 del enunciado Lab 2).
+benchmark-gpu:
+	$(NVCC) $(NVCCFLAGS) \
+		-Xcompiler $(NVCC_HOST_FLAGS) \
+		-o $(GPU_BENCHMARK_BIN) \
+		benchmarks/benchmark_gpu_main.cu \
+		benchmarks/BenchmarkGpu.cu \
+		benchmarks/Benchmark.cpp \
+		kernels/accelerations.cu \
+		src/cuda/NBodyDeviceState.cu \
+		src/cuda/NBodySystemGpu.cu \
+		src/model/Particle.cpp \
+		src/model/NBodySystem.cpp
+
+	./$(GPU_BENCHMARK_BIN)
 
 plots:
 	mkdir -p output
