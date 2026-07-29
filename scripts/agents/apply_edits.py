@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Validate and apply the structured JSON response from a documentation/bug
-agent (see documentador.prompt.yml / bug-reviewer.prompt.yml).
+agent (see documentador.md / bug-reviewer.md).
 
 Both agents answer with a fixed JSON schema:
   action:      "none" | "open_issue" | "open_fix_pr" | "human_required"
@@ -18,13 +18,19 @@ Any mismatch silently degrades the action to "open_issue" instead of risking
 a corrupted file, and a note is appended to issue_body explaining why the
 automatic patch was not applied.
 
+The response file does not have to be pure JSON: load_json_response() below
+tolerates a raw model response that wraps the JSON object in a ```json
+fence or has stray text around it, and falls back to action=none (a safe
+no-op) if no valid JSON object can be found at all.
+
 Usage:
-    python3 apply_edits.py <response.json> <comma,separated,allowlist>
+    python3 apply_edits.py <response.txt> <comma,separated,allowlist>
 Writes the final decision to $GITHUB_OUTPUT as: action, title, reason,
 issue_body, target_file (all as GitHub Actions step outputs).
 """
 import json
 import os
+import re
 import sys
 
 
@@ -39,16 +45,47 @@ def write_output(name: str, value: str) -> None:
         sys.stdout.write(line)
 
 
+def load_json_response(path: str) -> dict:
+    """Best-effort JSON extraction from a raw model response.
+
+    We do not use the ai-inference action's json_schema response format
+    (its .prompt.yml template substitution corrupts YAML when the
+    substituted content itself contains multi-line text such as a
+    markdown-fenced README dump), so the model is instructed in plain text
+    to answer with JSON only. This still degrades gracefully if the model
+    wraps the JSON in a ```json fence or adds stray prose around it.
+    """
+    with open(path, encoding="utf-8") as fh:
+        raw = fh.read()
+
+    candidates = [raw.strip()]
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    if fenced:
+        candidates.append(fenced.group(1))
+    braces = re.search(r"\{.*\}", raw, re.DOTALL)
+    if braces:
+        candidates.append(braces.group(0))
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    print(f"WARNING: could not parse a JSON object out of the model response in {path}; treating as action=none.", file=sys.stderr)
+    print(f"--- raw response ---\n{raw}\n--- end raw response ---", file=sys.stderr)
+    return {"action": "none"}
+
+
 def main() -> int:
     if len(sys.argv) != 3:
-        print("Usage: apply_edits.py <response.json> <allowlist,comma,separated>", file=sys.stderr)
+        print("Usage: apply_edits.py <response.txt> <allowlist,comma,separated>", file=sys.stderr)
         return 2
 
     response_path, allowlist_raw = sys.argv[1], sys.argv[2]
     allowlist = {p.strip() for p in allowlist_raw.split(",") if p.strip()}
 
-    with open(response_path, encoding="utf-8") as fh:
-        data = json.load(fh)
+    data = load_json_response(response_path)
 
     action = data.get("action", "none")
     title = data.get("title", "") or ""

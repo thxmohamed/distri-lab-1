@@ -4,12 +4,17 @@ name: Agent - Documentador
 # dispararse manualmente para dejar evidencia antes de la entrega.
 #
 # Motor: GitHub Models (actions/ai-inference), gratuito, autenticado con el
-# GITHUB_TOKEN del propio workflow. El prompt y el esquema de salida viven
-# en scripts/agents/documentador.prompt.yml. Este workflow solo reune
-# contexto, llama al modelo, y ejecuta la accion resultante (issue, PR
-# mecanico, o comentario "requiere intervencion humana") via
-# scripts/agents/apply_edits.py. Nunca hace push a main directamente (la
-# proteccion de rama lo bloquearia de todos modos) ni fusiona un PR.
+# GITHUB_TOKEN del propio workflow. El system prompt vive en
+# scripts/agents/documentador.md y pide JSON en texto plano (no se usa el
+# modo prompt-file/.prompt.yml de la accion: su sustitucion de plantillas
+# {{var}} corrompe el YAML cuando el valor sustituido es un texto
+# multilinea como este contexto, ver historial de commits para el detalle
+# del fallo). Este workflow solo reune contexto, llama al modelo, y
+# ejecuta la accion resultante (issue, PR mecanico, o comentario "requiere
+# intervencion humana") via scripts/agents/apply_edits.py, que ademas
+# tolera que el modelo envuelva el JSON en backticks. Nunca hace push a
+# main directamente (la proteccion de rama lo bloquearia de todos modos)
+# ni fusiona un PR.
 on:
   schedule:
     - cron: "0 13 * * 1" # Lunes 13:00 UTC
@@ -42,8 +47,8 @@ jobs:
         id: gather
         run: |
           set -euo pipefail
-          CONTEXT_FILE="$RUNNER_TEMP/context.txt"
           {
+            echo 'context<<AGENT_CONTEXT_EOF'
             echo "## README.md actual"
             echo '```markdown'
             cat README.md
@@ -56,16 +61,18 @@ jobs:
             echo
             echo "## Ultimos 20 commits"
             git log --oneline -20
-          } > "$CONTEXT_FILE"
-          echo "path=$CONTEXT_FILE" >> "$GITHUB_OUTPUT"
+            echo 'AGENT_CONTEXT_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Ejecutar agente documentador
         id: inference
         uses: actions/ai-inference@v1
         with:
-          prompt-file: scripts/agents/documentador.prompt.yml
-          file_input: |
-            context: ${{ steps.gather.outputs.path }}
+          system-prompt-file: scripts/agents/documentador.md
+          prompt: |
+            ${{ steps.gather.outputs.context }}
+          model: openai/gpt-4o
+          max-tokens: "2000"
 
       - name: Aplicar clasificacion
         id: apply
