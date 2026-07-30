@@ -129,7 +129,9 @@ benchmark-gpu:
 		src/cuda/NBodyDeviceState.cu \
 		src/cuda/NBodySystemGpu.cu \
 		src/model/Particle.cpp \
-		src/model/NBodySystem.cpp
+		src/model/NBodySystem.cpp \
+		src/simulation/Integrator.cpp \
+		src/simulation/NBodySimulator.cpp
 
 	./$(GPU_BENCHMARK_BIN)
 

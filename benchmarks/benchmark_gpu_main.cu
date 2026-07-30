@@ -39,7 +39,10 @@ void appendCommandOutput(const std::string& label, const std::string& command) {
     log << "\n# " << label << "\n$ " << command << "\n";
     log.close();
 
-    std::system((command + " >> cluster_run.log 2>&1").c_str());
+    if (std::system((command + " >> cluster_run.log 2>&1").c_str()) != 0) {
+        std::ofstream errLog("cluster_run.log", std::ios::app);
+        errLog << "(comando '" << label << "' termino con error, ver arriba)\n";
+    }
 }
 
 } // namespace
