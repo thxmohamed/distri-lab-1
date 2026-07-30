@@ -5,7 +5,10 @@ name: Agent - Revisor de MR
 # fusiona el PR: solo comenta su clasificacion (mecanico y mergeable, o
 # requiere revision humana).
 #
-# Motor: GitHub Models (actions/ai-inference), gratuito.
+# Motor: GitHub Models (actions/ai-inference), gratuito. El system prompt
+# vive en scripts/agents/mr-reviewer.md y pide JSON en texto plano (no se
+# usa el modo prompt-file/.prompt.yml: su sustitucion de plantillas
+# corrompe el YAML con contexto multilinea, ver historial de commits).
 on:
   workflow_run:
     workflows: ["CI"]
@@ -48,8 +51,8 @@ jobs:
           CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
-          CONTEXT_FILE="$RUNNER_TEMP/context.txt"
           {
+            echo 'context<<AGENT_CONTEXT_EOF'
             echo "## CI_CONCLUSION: $CI_CONCLUSION"
             echo
             echo "## Titulo y descripcion del PR"
@@ -58,28 +61,35 @@ jobs:
             echo
             echo "## Diff del PR"
             gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}"
-          } > "$CONTEXT_FILE"
-          echo "path=$CONTEXT_FILE" >> "$GITHUB_OUTPUT"
+            echo 'AGENT_CONTEXT_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Ejecutar agente revisor de MR
         id: inference
         if: steps.pr.outputs.number != ''
         uses: actions/ai-inference@v1
         with:
-          prompt-file: scripts/agents/mr-reviewer.prompt.yml
-          file_input: |
-            context: ${{ steps.gather.outputs.path }}
+          system-prompt-file: scripts/agents/mr-reviewer.md
+          prompt: |
+            ${{ steps.gather.outputs.context }}
+          model: openai/gpt-4o
+          max-tokens: "800"
+
+      - name: Parsear respuesta del agente
+        id: parse
+        if: steps.pr.outputs.number != ''
+        run: |
+          python3 scripts/agents/parse_mr_response.py "${{ steps.inference.outputs.response-file }}"
 
       - name: Comentar PR con la clasificacion
         if: steps.pr.outputs.number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
-          RESPONSE_FILE: ${{ steps.inference.outputs.response-file }}
+          CLASSIFICATION: ${{ steps.parse.outputs.classification }}
+          REASON: ${{ steps.parse.outputs.reason }}
         run: |
           set -euo pipefail
-          CLASSIFICATION=$(jq -r '.classification' "$RESPONSE_FILE")
-          REASON=$(jq -r '.reason' "$RESPONSE_FILE")
 
           HEADER="✅ Mecánico y mergeable"
           if [ "$CLASSIFICATION" != "mechanical_mergeable" ]; then
@@ -90,7 +100,7 @@ jobs:
           {
             printf '**Agente revisor de MR — %s**\n\n' "$HEADER"
             printf '%s\n\n' "$REASON"
-            echo "_Comentario generado automáticamente por scripts/agents/mr-reviewer.prompt.yml. Este agente nunca fusiona el PR: la decisión final es siempre de una persona del equipo._"
+            echo "_Comentario generado automáticamente por scripts/agents/mr-reviewer.md. Este agente nunca fusiona el PR: la decisión final es siempre de una persona del equipo._"
           } > "$COMMENT_FILE"
 
           gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body-file "$COMMENT_FILE"

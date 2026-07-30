@@ -41,16 +41,18 @@ El repositorio usa [GitHub Models](https://github.com/marketplace/models) vía l
 
 A diferencia de un agente autónomo tipo Claude Code, `ai-inference` es una **llamada de inferencia única**: no ejecuta shell ni edita archivos por sí sola. El diseño acá es "el modelo clasifica en JSON estructurado → un script determinista ejecuta la acción":
 
-1. El workflow reúne contexto (README/CHANGELOG, diffs recientes, diff del PR, etc.) con `git`/`gh`.
-2. Se llama al modelo con el prompt versionado en `scripts/agents/*.prompt.yml`, que fuerza una respuesta JSON (`responseFormat: json_schema`).
-3. Para el documentador y el revisor de bugs, [`scripts/agents/apply_edits.py`](scripts/agents/apply_edits.py) valida la respuesta: solo aplica un "fix mecánico" si el archivo está en una lista blanca y cada reemplazo de texto propuesto aparece **exactamente una vez** en el archivo; si no, degrada automáticamente a abrir un issue en vez de arriesgar corromper un archivo (ver el docstring del script para el detalle). Esta es una limitación deliberada del diseño: sin GPU ni compilador en el runner, no hay forma de verificar que un parche a `kernels/`, `src/` o `include/` sea correcto, así que esos casos siempre terminan en issue o en "requiere intervención humana", nunca en un PR automático.
-4. El workflow ejecuta la acción resultante (`gh issue create`, `gh pr create`, o `gh pr comment`) con `gh`.
+1. El workflow reúne contexto (README/CHANGELOG, diffs recientes, diff del PR, etc.) con `git`/`gh` y lo pasa como `prompt` a la acción.
+2. Se llama al modelo con el system prompt versionado en `scripts/agents/*.md`, que le pide responder **únicamente** con un objeto JSON (descrito en texto dentro del propio prompt).
+   > Nota de diseño: la acción también ofrece un modo `prompt-file` con archivos `.prompt.yml` que fuerza el JSON vía `responseFormat: json_schema`. Se descartó: su sustitución de variables `{{var}}` reemplaza texto de forma cruda *antes* de volver a interpretar el YAML, y un contexto multilínea (p. ej. el README con bloques ` ```markdown `) rompe el parseo. El enfoque actual (prompt plano + parseo tolerante del lado del script) es más simple y no depende de ese mecanismo.
+3. [`scripts/agents/apply_edits.py`](scripts/agents/apply_edits.py) (documentador y revisor de bugs) y [`scripts/agents/parse_mr_response.py`](scripts/agents/parse_mr_response.py) (revisor de MR) extraen el JSON de la respuesta cruda del modelo tolerando que venga envuelto en ` ```json ` o con texto alrededor; si no encuentran nada parseable, degradan de forma segura (`action: none` / `classification: human_review`) en vez de fallar el workflow.
+4. Para el documentador y el revisor de bugs, `apply_edits.py` además valida la acción: solo aplica un "fix mecánico" si el archivo está en una lista blanca y cada reemplazo de texto propuesto aparece **exactamente una vez** en el archivo; si no, degrada automáticamente a abrir un issue en vez de arriesgar corromper un archivo. Esta es una limitación deliberada del diseño: sin GPU ni compilador en el runner, no hay forma de verificar que un parche a `kernels/`, `src/` o `include/` sea correcto, así que esos casos siempre terminan en issue o en "requiere intervención humana", nunca en un PR automático.
+5. El workflow ejecuta la acción resultante (`gh issue create`, `gh pr create`, o `gh pr comment`) con `gh`.
 
 | Agente | Workflow | Prompt | Frecuencia | Criterio mecánico (arregla solo) | Criterio humano (solo comenta/issue) |
 |---|---|---|---|---|---|
-| Documentador | [`agent-documentation.yml`](.github/workflows/agent-documentation.yml) | [`documentador.prompt.yml`](scripts/agents/documentador.prompt.yml) | Semanal (lunes) + al fusionar a `main` + manual | Typo, enlace roto, entrada de CHANGELOG faltante — como reemplazo de texto exacto en `README.md`/`CHANGELOG.md` | Explicar diseño/decisiones de arquitectura |
-| Revisor de bugs | [`agent-bug-review.yml`](.github/workflows/agent-bug-review.yml) | [`bug-reviewer.prompt.yml`](scripts/agents/bug-reviewer.prompt.yml) | Diaria (cron) + manual | Tolerancia de test desalineada del README — solo si el archivo está bajo `tests/` | Falta `CUDA_CHECK`, TODO sin issue, o cualquier cambio a física/API pública/lógica de kernels |
-| Revisor de MR | [`agent-mr-review.yml`](.github/workflows/agent-mr-review.yml) | [`mr-reviewer.prompt.yml`](scripts/agents/mr-reviewer.prompt.yml) | Al terminar el CI de cada PR (`workflow_run` sobre el workflow `CI`) | Solo docs/formato/tests en verde, vinculado a un issue | Cambia semántica física o firma pública sin issue, o CI en rojo |
+| Documentador | [`agent-documentation.yml`](.github/workflows/agent-documentation.yml) | [`documentador.md`](scripts/agents/documentador.md) | Semanal (lunes) + al fusionar a `main` + manual | Typo, enlace roto, entrada de CHANGELOG faltante — como reemplazo de texto exacto en `README.md`/`CHANGELOG.md` | Explicar diseño/decisiones de arquitectura |
+| Revisor de bugs | [`agent-bug-review.yml`](.github/workflows/agent-bug-review.yml) | [`bug-reviewer.md`](scripts/agents/bug-reviewer.md) | Diaria (cron) + manual | Tolerancia de test desalineada del README — solo si el archivo está bajo `tests/` | Falta `CUDA_CHECK`, TODO sin issue, o cualquier cambio a física/API pública/lógica de kernels |
+| Revisor de MR | [`agent-mr-review.yml`](.github/workflows/agent-mr-review.yml) | [`mr-reviewer.md`](scripts/agents/mr-reviewer.md) | Al terminar el CI de cada PR (`workflow_run` sobre el workflow `CI`) | Solo docs/formato/tests en verde, vinculado a un issue | Cambia semántica física o firma pública sin issue, o CI en rojo |
 
 Reglas comunes a los tres agentes:
 
@@ -58,6 +60,7 @@ Reglas comunes a los tres agentes:
 - El documentador y el revisor de bugs solo abren PRs mecánicos vía rama `agent/<slug>-<run_id>` + `gh pr create`, etiquetados `agent:auto-fix`; para hallazgos que requieren criterio, solo abren un issue con `Requiere intervención humana: <motivo>`.
 - El revisor de MR **nunca** ejecuta `gh pr merge`: solo comenta la clasificación del PR.
 - Cada ejecución reporta como máximo un hallazgo (un issue o un PR), muy por debajo del tope de 5 issues automáticos por semana sin revisión humana.
+- El tag `@v1` de `actions/ai-inference` fija una versión concreta de la acción (Node 20, sin `max-completion-tokens` ni `responseFormat`); los inputs usados (`prompt`, `system-prompt-file`, `model`, `max-tokens`) son los que existen en esa versión exacta, verificados contra su `action.yml`.
 
 ### Requisito para correr los agentes
 

@@ -3,13 +3,15 @@ name: Agent - Revisor de bugs
 # Corre diariamente sobre main (cron), ademas de poder dispararse
 # manualmente para dejar evidencia antes de la entrega.
 #
-# Motor: GitHub Models (actions/ai-inference), gratuito. Ver
-# scripts/agents/bug-reviewer.prompt.yml para el detalle de la decision de
-# diseno: como este runner no compila CUDA ni corre tests con GPU, el
-# "open_fix_pr" automatico solo se permite sobre archivos bajo tests/;
-# cualquier otro hallazgo (incluyendo CUDA_CHECK faltante en kernels/ o
-# src/cuda/) se reporta como issue o como "requiere intervencion humana",
-# nunca como parche automatico.
+# Motor: GitHub Models (actions/ai-inference), gratuito. El system prompt
+# vive en scripts/agents/bug-reviewer.md y pide JSON en texto plano (no se
+# usa el modo prompt-file/.prompt.yml: su sustitucion de plantillas
+# corrompe el YAML con contexto multilinea, ver historial de commits).
+# Decision de diseno: como este runner no compila CUDA ni corre tests con
+# GPU, el "open_fix_pr" automatico solo se permite sobre archivos bajo
+# tests/; cualquier otro hallazgo (incluyendo CUDA_CHECK faltante en
+# kernels/ o src/cuda/) se reporta como issue o como "requiere intervencion
+# humana", nunca como parche automatico.
 on:
   schedule:
     - cron: "0 9 * * *" # Todos los dias 09:00 UTC
@@ -41,9 +43,9 @@ jobs:
         id: gather
         run: |
           set -euo pipefail
-          CONTEXT_FILE="$RUNNER_TEMP/context.txt"
           BASE=$(git rev-parse HEAD~5 2>/dev/null || git rev-list --max-parents=0 HEAD)
           {
+            echo 'context<<AGENT_CONTEXT_EOF'
             echo "## Ultimos 15 commits"
             git log --oneline -15
 
@@ -66,16 +68,18 @@ jobs:
             echo
             echo "## Tolerancias rtol/atol documentadas en README.md"
             grep -n "rtol\|atol" README.md || echo "(sin menciones)"
-          } > "$CONTEXT_FILE"
-          echo "path=$CONTEXT_FILE" >> "$GITHUB_OUTPUT"
+            echo 'AGENT_CONTEXT_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Ejecutar agente revisor de bugs
         id: inference
         uses: actions/ai-inference@v1
         with:
-          prompt-file: scripts/agents/bug-reviewer.prompt.yml
-          file_input: |
-            context: ${{ steps.gather.outputs.path }}
+          system-prompt-file: scripts/agents/bug-reviewer.md
+          prompt: |
+            ${{ steps.gather.outputs.context }}
+          model: openai/gpt-4o
+          max-tokens: "2000"
 
       - name: Aplicar clasificacion
         id: apply
