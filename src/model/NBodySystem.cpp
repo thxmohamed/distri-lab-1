@@ -144,18 +144,74 @@ inline void validateChunkSize(int chunk_size)
  *  - instancia inicializada del sistema N-cuerpos
  *
  * Descripción:
- *  Inicializa los parámetros físicos globales del sistema.
- *  Lanza excepción si epsilon no es positivo, ya que un valor
- *  nulo o negativo provocaría singularidades en el cálculo de fuerzas.
+ *  Inicializa los parámetros físicos globales del sistema y deja
+ *  preparado el estado asociado a la integración GPU. Al crearse,
+ *  aún no existe un estado persistente en el dispositivo, por lo
+ *  que se marca que la primera ejecución deberá realizar una carga
+ *  completa de los datos hacia la GPU.
+ *
+ *  Lanza una excepción si epsilon no es positivo, ya que un valor
+ *  nulo o negativo provocaría singularidades en el cálculo de
+ *  fuerzas.
  */
 NBodySystem::NBodySystem(double G, double epsilon)
     : G_(G)
     , epsilon_(epsilon)
+    , device_state_(nullptr)
+    , device_state_needs_full_upload_(true)
 {
     if (epsilon <= 0.0) {
         throw std::invalid_argument(
             "NBodySystem: epsilon debe ser estrictamente positivo.");
     }
+}
+
+/**
+ * ---------------------------------------------------------------
+ * NBodySystem - constructor por copia
+ * ---------------------------------------------------------------
+ * Copia únicamente el estado físico almacenado en host.
+ *
+ * El estado CUDA no se comparte entre sistemas. La copia creará
+ * sus propios buffers device cuando utilice por primera vez una
+ * operación GPU.
+ */
+NBodySystem::NBodySystem(const NBodySystem& other)
+    : bodies_(other.bodies_)
+    , G_(other.G_)
+    , epsilon_(other.epsilon_)
+    , device_state_(nullptr)
+    , device_state_needs_full_upload_(true)
+{
+}
+
+
+/**
+ * ---------------------------------------------------------------
+ * operator= - asignación por copia
+ * ---------------------------------------------------------------
+ * Copia el estado físico host y descarta cualquier estado CUDA
+ * previamente asociado al objeto destino.
+ */
+NBodySystem& NBodySystem::operator=(const NBodySystem& other)
+{
+    if (this == &other) {
+        return *this;
+    }
+
+    bodies_ = other.bodies_;
+    G_ = other.G_;
+    epsilon_ = other.epsilon_;
+
+    /*
+     * El estado CUDA del sistema anterior deja de ser válido para
+     * las nuevas partículas. Se libera mediante RAII y se volverá
+     * a crear cuando se utilice la ruta GPU.
+     */
+    device_state_.reset();
+    device_state_needs_full_upload_ = true;
+
+    return *this;
 }
 
 // ================================================================
@@ -173,11 +229,21 @@ NBodySystem::NBodySystem(double G, double epsilon)
  *  - ninguna
  *
  * Descripción:
- *  Inserta una nueva partícula al final del vector interno.
+ *  Inserta una nueva partícula al final del sistema. Dado que cambia
+ *  la cantidad de cuerpos, el estado persistente en GPU se invalida
+ *  para que, en la siguiente operación CUDA, se redimensionen los
+ *  buffers y se realice una nueva carga completa de los datos.
  */
 void NBodySystem::addParticle(const Particle& p)
 {
     bodies_.push_back(p);
+
+    /*
+     * Cambió la cantidad y composición del sistema. En la siguiente
+     * operación GPU deben redimensionarse los buffers y copiarse
+     * nuevamente las masas.
+     */
+    invalidateDeviceState();
 }
 
 /**
@@ -191,11 +257,19 @@ void NBodySystem::addParticle(const Particle& p)
  *  - ninguna
  *
  * Descripción:
- *  Elimina todas las partículas del sistema.
+ *  Libera y remueve todas las partículas del sistema, forzando 
+ *  una reinicialización completa del estado de la GPU.
  */
 void NBodySystem::clear()
 {
     bodies_.clear();
+
+    /*
+     * La composición del sistema cambió completamente. Los buffers
+     * existentes podrán reutilizarse o redimensionarse, pero antes
+     * deberá realizarse una nueva carga inicial.
+     */
+    invalidateDeviceState();
 }
 
 /**

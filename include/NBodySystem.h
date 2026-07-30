@@ -5,6 +5,10 @@
 #include <vector>
 #include <string>
 #include <iosfwd>
+#include <memory>
+
+class NBodyDeviceState;
+class NBodySimulator;
 
 /**
  * =================================================================
@@ -41,6 +45,57 @@ private:
     double G_;                     // constante gravitacional (G = 1.0 en unidades adimensionales)
     double epsilon_;               // parámetro de suavizado de Plummer (ε > 0), evita singularidades
 
+    **
+     * Estado SoA persistente en memoria GPU.
+     *
+     * Se crea de forma diferida durante la primera operación CUDA y se
+     * conserva entre llamadas para evitar reservar y liberar memoria
+     * device en cada paso temporal.
+     *
+     * Aunque se utiliza shared_ptr para permitir la declaración adelantada
+     * del tipo CUDA, las copias de NBodySystem no compartirán este estado.
+     */
+    std::shared_ptr<NBodyDeviceState> device_state_;
+
+    /**
+     * Indica que el estado device requiere una carga completa.
+     *
+     * Se activa al agregar, eliminar o reinicializar partículas, ya que
+     * en esos casos pueden cambiar la cantidad de cuerpos y sus masas.
+     */
+    bool device_state_needs_full_upload_ = true;
+
+    /**
+     * Prepara y retorna el estado CUDA asociado al sistema.
+     *
+     * Primera utilización o sistema modificado:
+     *  - reserva/redimensiona los buffers;
+     *  - copia masas, posiciones y velocidades.
+     *
+     * Utilizaciones posteriores:
+     *  - actualiza posiciones;
+     *  - actualiza velocidades solo cuando include_velocities es true.
+     *
+     * @param include_velocities Indica si también deben actualizarse vx y vy.
+     */
+    NBodyDeviceState& prepareDeviceState(bool include_velocities);
+
+    /**
+     * Marca el estado CUDA como desactualizado.
+     *
+     * No libera inmediatamente la memoria: la siguiente operación GPU
+     * decidirá si debe reutilizar o redimensionar los buffers.
+     */
+    void invalidateDeviceState() noexcept {
+        device_state_needs_full_upload_ = true;
+    }
+
+    /**
+     * Permite que NBodySimulator reutilice el mismo estado CUDA para
+     * calcular energía, sin crear otro NBodyDeviceState temporal.
+     */
+    friend class NBodySimulator;
+
 public:
     // ----------------------------------------------------------------
     // Constructor
@@ -51,6 +106,28 @@ public:
      * @param epsilon Parámetro de suavizado (p.ej. 0.05). Debe ser > 0.
      */
     NBodySystem(double G, double epsilon);
+
+    /**
+     * Copia el estado físico almacenado en host.
+     *
+     * El estado CUDA no se comparte con la copia. El nuevo sistema creará
+     * sus propios buffers cuando ejecute por primera vez una operación GPU.
+     */
+    NBodySystem(const NBodySystem& other);
+
+    /**
+     * Asigna el estado físico almacenado en host.
+     *
+     * Cualquier estado CUDA anterior se descarta y deberá inicializarse
+     * nuevamente en la siguiente operación GPU.
+     */
+    NBodySystem& operator=(const NBodySystem& other);
+
+    /**
+     * Transfiere tanto el estado host como la propiedad del estado CUDA.
+     */
+    NBodySystem(NBodySystem&& other) noexcept = default;
+    NBodySystem& operator=(NBodySystem&& other) noexcept = default;
 
     // ----------------------------------------------------------------
     // Gestión de partículas
