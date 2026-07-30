@@ -14,8 +14,8 @@ constexpr double kGravitationalConstant = 1.0;
 constexpr double kEpsilon = 1e-2;
 constexpr double kTimeStep = 1e-3;
 constexpr int kBlockSize = 256;
-constexpr double kRelativeTolerance = 1e-4;
-constexpr double kAbsoluteTolerance = 1e-8;
+constexpr double kRelativeTolerance = 1e-4 /* 1e-4;
+constexpr double kAbsoluteTolerance = 1eg-8 /*1e-8;
 
 // ----------------------------------------------------------------
 // Funciones auxiliares
