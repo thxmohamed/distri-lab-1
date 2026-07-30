@@ -60,6 +60,7 @@ Reglas comunes a los tres agentes:
 - El documentador y el revisor de bugs solo abren PRs mecánicos vía rama `agent/<slug>-<run_id>` + `gh pr create`, etiquetados `agent:auto-fix`; para hallazgos que requieren criterio, solo abren un issue con `Requiere intervención humana: <motivo>`.
 - El revisor de MR **nunca** ejecuta `gh pr merge`: solo comenta la clasificación del PR.
 - Cada ejecución reporta como máximo un hallazgo (un issue o un PR), muy por debajo del tope de 5 issues automáticos por semana sin revisión humana.
+- El documentador y el revisor de bugs además se limitan a **1 issue abierto propio a la vez** (label `agent`+`documentation` o `agent`+`bug` respectivamente): si ya hay uno pendiente de revisión humana, la siguiente corrida no crea otro aunque vuelva a encontrar (o alucinar) el mismo hallazgo. Evita que un falso positivo recurrente inunde el tablero de issues/PR duplicados — hay que cerrar el existente para que el agente pueda reportar algo nuevo.
 - El tag `@v1` de `actions/ai-inference` fija una versión concreta de la acción (Node 20, sin `max-completion-tokens` ni `responseFormat`); los inputs usados (`prompt`, `system-prompt-file`, `model`, `max-tokens`) son los que existen en esa versión exacta, verificados contra su `action.yml`.
 
 ### Requisitos y límites conocidos

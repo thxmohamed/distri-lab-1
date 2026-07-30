@@ -116,6 +116,18 @@ jobs:
             exit 0
           fi
 
+          # Como el modelo puede volver a encontrar (o alucinar) el mismo
+          # hallazgo en cada corrida, se limita a 1 issue abierto con label
+          # agent+bug a la vez: si ya hay uno pendiente, no se crea otro.
+          # Evita inundar el tablero de duplicados hasta que una persona
+          # cierre el anterior.
+          OPEN_AGENT_BUG_ISSUES=$(gh issue list --repo "${{ github.repository }}" --state open --label agent \
+            --json labels --jq '[.[] | select(.labels[].name == "bug")] | length')
+          if [ "$OPEN_AGENT_BUG_ISSUES" -gt 0 ]; then
+            echo "Ya hay $OPEN_AGENT_BUG_ISSUES issue(s) abierto(s) con label agent+bug; se omite crear uno nuevo para evitar duplicados."
+            exit 0
+          fi
+
           BODY_FILE="$RUNNER_TEMP/issue_body.md"
           printf '%s\n' "$ISSUE_BODY" > "$BODY_FILE"
 
