@@ -37,9 +37,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" \
-            --head "${{ github.event.workflow_run.head_branch }}" \
-            --json number --jq '.[0].number')
+          # Se usa primero el payload del propio evento (funciona sin
+          # importar si el PR ya fue mergeado/cerrado entre que termino el
+          # CI y que corrio este job); gh pr list --state all es el
+          # respaldo para casos donde ese campo venga vacio.
+          PR_NUMBER=$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")
+          if [ -z "$PR_NUMBER" ]; then
+            PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" --state all \
+              --head "${{ github.event.workflow_run.head_branch }}" \
+              --json number --jq '.[0].number')
+          fi
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: Reunir contexto del PR
@@ -51,16 +58,32 @@ jobs:
           CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
+          CONTEXT=$(
+            {
+              echo "## CI_CONCLUSION: $CI_CONCLUSION"
+              echo
+              echo "## Titulo y descripcion del PR"
+              gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
+                --json title,body --jq '"# " + .title + "\n\n" + (.body // "(sin descripcion)")'
+              echo
+              echo "## Resumen de archivos cambiados"
+              gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json files \
+                --jq '.files[] | "- " + .path + " (+" + (.additions|tostring) + "/-" + (.deletions|tostring) + ")"'
+              echo
+              echo "## Diff del PR"
+              gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}"
+            }
+          )
+          # GitHub Models limita el request completo a 8000 tokens en el
+          # tier gratuito; los diffs de PRs grandes (p. ej. CudaBuffer,
+          # integracion Euler GPU) pueden superarlo largamente.
+          MAX_CHARS=6000
+          if [ "${#CONTEXT}" -gt "$MAX_CHARS" ]; then
+            CONTEXT="${CONTEXT:0:$MAX_CHARS}"$'\n[... diff truncado por limite de tokens del modelo gratuito; si no alcanzas a ver todo el cambio, clasifica como human_review y dilo en "reason" ...]'
+          fi
           {
             echo 'context<<AGENT_CONTEXT_EOF'
-            echo "## CI_CONCLUSION: $CI_CONCLUSION"
-            echo
-            echo "## Titulo y descripcion del PR"
-            gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
-              --json title,body --jq '"# " + .title + "\n\n" + (.body // "(sin descripcion)")'
-            echo
-            echo "## Diff del PR"
-            gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}"
+            printf '%s\n' "$CONTEXT"
             echo 'AGENT_CONTEXT_EOF'
           } >> "$GITHUB_OUTPUT"
 

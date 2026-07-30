@@ -50,7 +50,7 @@ A diferencia de un agente autónomo tipo Claude Code, `ai-inference` es una **ll
 
 | Agente | Workflow | Prompt | Frecuencia | Criterio mecánico (arregla solo) | Criterio humano (solo comenta/issue) |
 |---|---|---|---|---|---|
-| Documentador | [`agent-documentation.yml`](.github/workflows/agent-documentation.yml) | [`documentador.md`](scripts/agents/documentador.md) | Semanal (lunes) + al fusionar a `main` + manual | Typo, enlace roto, entrada de CHANGELOG faltante — como reemplazo de texto exacto en `README.md`/`CHANGELOG.md` | Explicar diseño/decisiones de arquitectura |
+| Documentador | [`agent-documentation.yml`](.github/workflows/agent-documentation.yml) | [`documentador.md`](scripts/agents/documentador.md) | Semanal (lunes) + al fusionar a `main` + manual | Entrada de CHANGELOG faltante — único archivo cuyo contenido completo recibe el modelo, como reemplazo de texto exacto en `CHANGELOG.md` | Enlaces rotos en `README.md` (el modelo solo recibe encabezados/enlaces, no el archivo completo), o explicar diseño/decisiones de arquitectura |
 | Revisor de bugs | [`agent-bug-review.yml`](.github/workflows/agent-bug-review.yml) | [`bug-reviewer.md`](scripts/agents/bug-reviewer.md) | Diaria (cron) + manual | Tolerancia de test desalineada del README — solo si el archivo está bajo `tests/` | Falta `CUDA_CHECK`, TODO sin issue, o cualquier cambio a física/API pública/lógica de kernels |
 | Revisor de MR | [`agent-mr-review.yml`](.github/workflows/agent-mr-review.yml) | [`mr-reviewer.md`](scripts/agents/mr-reviewer.md) | Al terminar el CI de cada PR (`workflow_run` sobre el workflow `CI`) | Solo docs/formato/tests en verde, vinculado a un issue | Cambia semántica física o firma pública sin issue, o CI en rojo |
 
@@ -62,9 +62,11 @@ Reglas comunes a los tres agentes:
 - Cada ejecución reporta como máximo un hallazgo (un issue o un PR), muy por debajo del tope de 5 issues automáticos por semana sin revisión humana.
 - El tag `@v1` de `actions/ai-inference` fija una versión concreta de la acción (Node 20, sin `max-completion-tokens` ni `responseFormat`); los inputs usados (`prompt`, `system-prompt-file`, `model`, `max-tokens`) son los que existen en esa versión exacta, verificados contra su `action.yml`.
 
-### Requisito para correr los agentes
+### Requisitos y límites conocidos
 
-Ninguno adicional: los tres workflows solo necesitan `permissions: models: read` (ya configurado) y el `GITHUB_TOKEN` que GitHub Actions provee automáticamente. Si `models: read` falla con un error de permisos, revisar Settings → Copilot → Model providers (o el equivalente a nivel de organización) para confirmar que el acceso a GitHub Models esté habilitado.
+- **Permisos del repo**: los tres workflows solo necesitan `permissions: models: read` (ya configurado en cada uno) y el `GITHUB_TOKEN` automático. Además, Settings → Actions → General → Workflow permissions debe tener marcado **"Allow GitHub Actions to create and approve pull requests"** — sin esto, el documentador y el revisor de bugs fallan en `gh pr create` con `GitHub Actions is not permitted to create or approve pull requests` cuando encuentran un fix mecánico (ya está habilitado en este repo).
+- **Límite de tokens del tier gratuito**: GitHub Models rechaza requests de más de 8000 tokens totales (prompt + system prompt + tokens de salida pedidos) para `openai/gpt-4o`. Por eso el contexto que arma cada workflow es deliberadamente acotado (resúmenes/diffstat en vez de diffs completos, encabezados de README en vez del archivo completo) y además se trunca con un tope de caracteres como respaldo antes de enviarlo.
+- Si `models: read` falla con un error de permisos, revisar Settings → Copilot → Model providers (o el equivalente a nivel de organización) para confirmar que el acceso a GitHub Models esté habilitado.
 
 ## Estructura de Archivos
 

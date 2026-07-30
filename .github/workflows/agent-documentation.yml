@@ -47,20 +47,34 @@ jobs:
         id: gather
         run: |
           set -euo pipefail
+          CONTEXT=$(
+            {
+              echo "## Encabezados de README.md"
+              grep -n '^#' README.md || true
+              echo
+              echo "## Enlaces internos en README.md"
+              grep -noE '\[[^]]*\]\([^)]*\)' README.md || echo "(sin enlaces)"
+              echo
+              echo "## CHANGELOG.md completo"
+              echo '```markdown'
+              cat CHANGELOG.md
+              echo '```'
+              echo
+              echo "## Ultimos 15 commits"
+              git log --oneline -15
+            }
+          )
+          # GitHub Models limita el request completo (prompt + system prompt +
+          # tokens pedidos) a 8000 tokens en el tier gratuito. Se envian
+          # encabezados/enlaces de README en vez del archivo completo (~22 KB)
+          # y ademas se trunca por seguridad.
+          MAX_CHARS=6000
+          if [ "${#CONTEXT}" -gt "$MAX_CHARS" ]; then
+            CONTEXT="${CONTEXT:0:$MAX_CHARS}"$'\n[... contexto truncado por limite de tokens del modelo gratuito ...]'
+          fi
           {
             echo 'context<<AGENT_CONTEXT_EOF'
-            echo "## README.md actual"
-            echo '```markdown'
-            cat README.md
-            echo '```'
-            echo
-            echo "## CHANGELOG.md actual"
-            echo '```markdown'
-            cat CHANGELOG.md
-            echo '```'
-            echo
-            echo "## Ultimos 20 commits"
-            git log --oneline -20
+            printf '%s\n' "$CONTEXT"
             echo 'AGENT_CONTEXT_EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -72,14 +86,14 @@ jobs:
           prompt: |
             ${{ steps.gather.outputs.context }}
           model: openai/gpt-4o
-          max-tokens: "2000"
+          max-tokens: "1200"
 
       - name: Aplicar clasificacion
         id: apply
         run: |
           python3 scripts/agents/apply_edits.py \
             "${{ steps.inference.outputs.response-file }}" \
-            "README.md,CHANGELOG.md"
+            "CHANGELOG.md"
 
       - name: Ejecutar accion segun clasificacion
         env:
