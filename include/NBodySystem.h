@@ -45,7 +45,7 @@ private:
     double G_;                     // constante gravitacional (G = 1.0 en unidades adimensionales)
     double epsilon_;               // parámetro de suavizado de Plummer (ε > 0), evita singularidades
 
-    **
+    /**
      * Estado SoA persistente en memoria GPU.
      *
      * Se crea de forma diferida durante la primera operación CUDA y se
