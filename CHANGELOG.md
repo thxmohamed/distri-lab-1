@@ -15,7 +15,7 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
   (`benchmarks/BenchmarkGpu.cu`) para medir el cálculo de aceleraciones en GPU sin y con
   transferencias host/device, y compararlo contra la ruta CPU para el mismo N.
 - `make benchmark-gpu`: compila y corre `benchmarks/benchmark_gpu_main.cu`, el driver que
-  recorre la matriz obligatoria N x variante x blockDim.x del enunciado Lab 2 y genera
+  recorre la matriz N x variante x blockDim.x del Lab 2 y genera
   `benchmark_results.dat`, `blockdim_study.dat` y `cluster_run.log` (con `nvidia-smi` y
   `nvcc --version`). Pensado para correr una sola vez en el clúster DIINF, no en CI.
 

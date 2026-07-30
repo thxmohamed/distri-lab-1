@@ -16,9 +16,8 @@
  * (sin transferencias), end-to-end (con transferencias) y comparación
  * directa contra la ruta CPU (OpenMP) para el mismo N.
  *
- * Temporización según el enunciado: std::chrono::steady_clock en host +
- * cudaDeviceSynchronize() antes de cerrar el cronómetro. No se usa
- * cudaEvent_t.
+ * Temporización con std::chrono::steady_clock en host + cudaDeviceSynchronize()
+ * antes de cerrar el cronómetro. No se usa cudaEvent_t.
  */
 
 namespace {

@@ -116,8 +116,8 @@ cuda-test:
 	./$(CUDA_SIMULATOR_TEST_BIN)
 
 # Compila el driver de la matriz de benchmarks GPU (N x variante x blockDim.x).
-# Pensado para correr en el clúster DIINF, no en CI (mediciones de performance
-# finales no se aceptan desde CI, ver sección 12 del enunciado Lab 2).
+# Pensado para correr en el clúster DIINF, no en CI: las mediciones finales de
+# rendimiento solo valen si salen de ahi, no de una corrida en CI.
 benchmark-gpu:
 	$(NVCC) $(NVCCFLAGS) \
 		-Xcompiler $(NVCC_HOST_FLAGS) \
@@ -146,9 +146,9 @@ plots:
 	python3 scripts/plot_energy_drift.py
 	python3 scripts/plot_clauses.py
 
-# Graficos GPU del Lab 2 (seccion 11 del enunciado). Requieren los .dat
-# generados por `make benchmark-gpu` en el clúster DIINF; separado de
-# `plots` para no depender de ellos al graficar solo el Lab 1.
+# Graficos GPU del Lab 2. Requieren los .dat generados por `make benchmark-gpu`
+# en el clúster DIINF; separado de `plots` para no depender de ellos al
+# graficar solo el Lab 1.
 plots-gpu:
 	mkdir -p output
 	python3 scripts/plot_gpu_speedup_vs_n.py

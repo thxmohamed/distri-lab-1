@@ -216,14 +216,14 @@ Los experimentos utilizan los siguientes parámetros por defecto:
 - `cluster_run.log` — `nvidia-smi`, `nvcc --version` y semilla usada, para documentar el entorno
 
 Pensado para correrse en el clúster DIINF — las mediciones finales de
-rendimiento no se aceptan desde CI (ver sección 12 del enunciado Lab 2).
+rendimiento solo valen si salen de ahi, no de una corrida en CI.
 
 `make plots-gpu` genera en `output/`:
 
 - `gpu_speedup_vs_n.png` — speedup GPU vs. CPU vs. N, ambas variantes
 - `gpu_transfer_impact.png` — tiempo kernel-only vs. end-to-end vs. N, por variante
 - `gpu_blockdim_study.png` — tiempo kernel-only vs. blockDim.x a N=2000, ambas variantes
-- `gpu_amdahl_plot.png` — curva de Amdahl GPU (blockDim.x como sustituto de p)
+- `gpu_amdahl_plot.png` — curva de Amdahl GPU (N como sustituto de p)
 - `gpu_variant_comparison.png` — básica vs. shared memory, mismo N
 - Reutiliza `trajectories_plot.png`/`energy_plot.png` del Lab 1 sin cambios
 

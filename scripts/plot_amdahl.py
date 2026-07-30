@@ -14,7 +14,7 @@ amdahl  = 1.0 / (f_est + (1.0 - f_est) / p_range)
 
 fig, ax = plt.subplots(figsize=(6, 4))
 
-ax.plot(p_range, amdahl, '--', label=f'Amdahl (f={f_est:.3f}, ajustado con todos los puntos)')
+ax.plot(p_range, amdahl, '--', label=f'Amdahl (f={f_est:.3f})')
 ax.errorbar(threads, measured, yerr=measured_err, fmt='o', zorder=5, label='medido')
 ax.set_xlabel('Hilos')
 ax.set_ylabel('Speedup')

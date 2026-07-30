@@ -10,7 +10,7 @@
 #include <vector>
 
 /**
- * Driver de la matriz de benchmarks GPU (sección 8 del enunciado Lab 2).
+ * Driver de la matriz de benchmarks GPU del Lab 2.
  *
  * Recorre N x variante x blockDim.x, midiendo tiempo de kernel-only y
  * end-to-end (blockdim_study.dat), y compara GPU contra CPU para el mismo N
@@ -24,8 +24,8 @@
 
 namespace {
 
-constexpr int kSteps = 100;         // Pasos por corrida (minimo del enunciado: >=100)
-constexpr int kRepetitions = 10;    // Repeticiones por punto (minimo del enunciado: >=10)
+constexpr int kSteps = 100;         // Pasos por corrida
+constexpr int kRepetitions = 10;    // Repeticiones por punto
 constexpr int kDefaultBlockSize = 256;
 
 const std::vector<int> kBodyCounts = {256, 512, 1024, 2000};
@@ -33,7 +33,7 @@ const std::vector<int> kVariants = {0, 1}; // 0=basico, 1=shared
 const std::vector<int> kBlockSizes = {64, 128, 256, 512, 1024};
 
 // Ejecuta un comando de sistema y agrega su salida a cluster_run.log, para
-// documentar nodo/GPU/driver como pide la sección 8 del enunciado.
+// documentar nodo/GPU/driver de la corrida.
 void appendCommandOutput(const std::string& label, const std::string& command) {
     std::ofstream log("cluster_run.log", std::ios::app);
     log << "\n# " << label << "\n$ " << command << "\n";
