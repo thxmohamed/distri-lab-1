@@ -414,14 +414,14 @@ bool testEnergyGpuMatchesCpu() {
         kTimeStep
     );
 
-    const double expectedTotal =
-        cpuSimulator.calculateTotalEnergy();
-
     const double expectedKinetic =
-        cpuSimulator.getKineticEnergy();
+        cpuSimulator.calculateKineticEnergy();
 
     const double expectedPotential =
-        cpuSimulator.getPotentialEnergy();
+        cpuSimulator.calculatePotentialEnergy();
+
+    const double expectedTotal =
+        expectedKinetic + expectedPotential;
 
     bool passed = true;
 
@@ -531,14 +531,14 @@ bool testPersistentStateAcrossGpuOperations() {
 
     // 3. La energía debe reutilizar el mismo estado
     // y transferir las velocidades actuales.
-    const double expectedTotal =
-        cpuSimulator.calculateTotalEnergy();
-
     const double expectedKinetic =
-        cpuSimulator.getKineticEnergy();
+        cpuSimulator.calculateKineticEnergy();
 
     const double expectedPotential =
-        cpuSimulator.getPotentialEnergy();
+        cpuSimulator.calculatePotentialEnergy();
+
+    const double expectedTotal =
+        expectedKinetic + expectedPotential;
 
     const double reductionTotal =
         gpuSimulator.calculateEnergyGpu(0);
@@ -644,14 +644,14 @@ bool testPersistentStateResizesAfterAddingParticle() {
         kTimeStep
     );
 
-    const double expectedTotal =
-        cpuSimulator.calculateTotalEnergy();
-
     const double expectedKinetic =
-        cpuSimulator.getKineticEnergy();
+        cpuSimulator.calculateKineticEnergy();
 
     const double expectedPotential =
-        cpuSimulator.getPotentialEnergy();
+        cpuSimulator.calculatePotentialEnergy();
+
+    const double expectedTotal =
+        expectedKinetic + expectedPotential;
 
     const double reductionTotal =
         gpuSimulator.calculateEnergyGpu(0);
@@ -737,14 +737,14 @@ bool testDefaultGpuOverloads() {
             kTimeStep
         );
 
-        const double expectedTotal =
-            cpuSimulator.calculateTotalEnergy();
-
         const double expectedKinetic =
-            cpuSimulator.getKineticEnergy();
+            cpuSimulator.calculateKineticEnergy();
 
         const double expectedPotential =
-            cpuSimulator.getPotentialEnergy();
+            cpuSimulator.calculatePotentialEnergy();
+
+        const double expectedTotal =
+            expectedKinetic + expectedPotential;
 
         const double gpuTotal =
             gpuSimulator.calculateEnergyGpu();
