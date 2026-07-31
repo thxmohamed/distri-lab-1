@@ -851,8 +851,8 @@ bool testInvalidGpuEnergyParameters() {
 int main() {
     std::cout
         << "=== Tests NBodySimulator GPU ===\n"
-        << "rtol=" << kRelativeTolerance
-        << ", atol=" << kAbsoluteTolerance
+        << "rtol=1e-4" << kRelativeTolerance
+        << ", atol=1e-8" << kAbsoluteTolerance
         << ", dt=" << kTimeStep
         << ", epsilon=" << kEpsilon
         << ", block_size=" << kBlockSize
