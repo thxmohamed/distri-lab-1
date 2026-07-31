@@ -46,23 +46,53 @@ void NBodySimulator::stepEulerGpu() {
  *   3. aplica kick,
  *   4. aplica drift.
  */
-void NBodySimulator::stepEulerGpu(int variant, int block_size) {
+void NBodySimulator::stepEulerGpu(
+    int variant,
+    int block_size
+) {
     if (variant < 0 || variant > 1) {
         throw std::invalid_argument(
-            "NBodySimulator::stepEulerGpu: variant invalido.");
+            "NBodySimulator::stepEulerGpu: variant invalido."
+        );
     }
 
     if (block_size <= 0) {
         throw std::invalid_argument(
-            "NBodySimulator::stepEulerGpu: block_size debe ser positivo.");
+            "NBodySimulator::stepEulerGpu: "
+            "block_size debe ser positivo."
+        );
     }
 
-    system_->computeAccelerationsGpu(variant, block_size);
+    /*
+     * computeAccelerationsGpu():
+     *  - actualiza las posiciones necesarias en device;
+     *  - ejecuta el kernel CUDA;
+     *  - sincroniza;
+     *  - descarga ax y ay hacia host.
+     */
+    system_->computeAccelerationsGpu(
+        variant,
+        block_size
+    );
 
     auto& bodies = system_->getBodies();
 
-    Integrator::applyKick(bodies, time_step_);
-    Integrator::applyDrift(bodies, time_step_);
+    /*
+     * Euler explícito permanece completamente en host,
+     * respetando el orden físico del Lab 1:
+     *
+     * v <- v + a * dt
+     * r <- r + v * dt
+     */
+    Integrator::applyKick(
+        bodies,
+        time_step_
+    );
+
+    Integrator::applyDrift(
+        bodies,
+        time_step_
+    );
 
     current_time_ += time_step_;
 }
@@ -99,27 +129,67 @@ double NBodySimulator::calculateEnergyGpu() {
  *  - Retorna la energía total calculada como K + U.
  *
  * Descripción:
- *  Calcula energía cinética y potencial usando kernels CUDA.
+ *  Reutiliza el estado SoA persistente perteneciente a NBodySystem.
+ *  Antes de ejecutar los kernels de energía actualiza posiciones y
+ *  velocidades, pero no vuelve a transferir las masas si la
+ *  composición del sistema no ha cambiado.
  */
 double NBodySimulator::calculateEnergyGpu(int method) {
     if (method < 0 || method > 1) {
         throw std::invalid_argument(
-            "NBodySimulator::calculateEnergyGpu: method invalido.");
+            "NBodySimulator::calculateEnergyGpu: "
+            "method invalido."
+        );
     }
 
-    auto& bodies = system_->getBodies();
+    /*
+     * Para un sistema vacío:
+     *  - K = 0;
+     *  - U = 0;
+     *  - E = 0.
+     *
+     * También se evita preparar buffers o lanzar una grilla vacía.
+     */
+    if (system_->getCount() == 0) {
+        kinetic_energy_ = 0.0;
+        potential_energy_ = 0.0;
+        total_energy_ = 0.0;
 
-    NBodyDeviceState deviceState;
-    deviceState.uploadInitialState(bodies);
+        return total_energy_;
+    }
 
-    double K = 0.0;
-    double U = 0.0;
+    /*
+     * Se reutiliza el estado device almacenado en NBodySystem.
+     *
+     * include_velocities = true porque el cálculo de energía requiere:
+     *  - masas;
+     *  - posiciones para U;
+     *  - velocidades para K.
+     *
+     * En la primera llamada se realiza una carga completa.
+     * En llamadas posteriores se actualizan solamente x, y, vx y vy.
+     */
+    NBodyDeviceState& deviceState =
+        system_->prepareDeviceState(true);
+
+    double kineticEnergy = 0.0;
+    double potentialEnergy = 0.0;
 
     const EnergyKernelMethod energyMethod =
         method == 0
             ? EnergyKernelMethod::Reduction
             : EnergyKernelMethod::Atomic;
 
+    /*
+     * El block size fijo de 256 es válido para la reducción actual,
+     * ya que es una potencia de dos.
+     *
+     * launchCalculateEnergyGpu() se encarga de:
+     *  - lanzar el kernel correspondiente;
+     *  - comprobar cudaGetLastError();
+     *  - sincronizar el device;
+     *  - recuperar K y U hacia host.
+     */
     launchCalculateEnergyGpu(
         deviceState.massData(),
         deviceState.positionXData(),
@@ -131,13 +201,14 @@ double NBodySimulator::calculateEnergyGpu(int method) {
         system_->getEpsilon(),
         energyMethod,
         256,
-        &K,
-        &U
+        &kineticEnergy,
+        &potentialEnergy
     );
 
-    kinetic_energy_ = K;
-    potential_energy_ = U;
-    total_energy_ = K + U;
+    kinetic_energy_ = kineticEnergy;
+    potential_energy_ = potentialEnergy;
+    total_energy_ =
+        kinetic_energy_ + potential_energy_;
 
     return total_energy_;
 }
