@@ -37,15 +37,24 @@ https://github.com/thxmohamed/distri-lab-1
 
 ## Agentes de IA
 
-El repositorio usa [GitHub Models](https://github.com/marketplace/models) vía la acción oficial [`actions/ai-inference`](https://github.com/actions/ai-inference) para correr tres agentes en CI. Es gratuito para este repositorio (público) y se autentica con el `GITHUB_TOKEN` propio de cada workflow — no requiere ningún secret ni cuenta adicional.
+El repositorio corre tres agentes en CI usando **[Ollama](https://ollama.com/) local, dentro del propio runner de GitHub Actions**, con el modelo open-source `qwen2.5-coder:7b-instruct-q4_K_M`. Es gratuito (los runners de Actions ya son gratis/ilimitados para repos públicos) y no depende de ninguna API de terceros ni requiere secrets.
 
-A diferencia de un agente autónomo tipo Claude Code, `ai-inference` es una **llamada de inferencia única**: no ejecuta shell ni edita archivos por sí sola. El diseño acá es "el modelo clasifica en JSON estructurado → un script determinista ejecuta la acción":
+> **Por qué Ollama y no una API externa**: se probaron dos alternativas antes.
+> Primero `anthropics/claude-code-action` (Anthropic, de pago) — se descartó por costo.
+> Después [GitHub Models](https://github.com/marketplace/models) vía `actions/ai-inference` (gratis) —
+> tuvo dos problemas serios: su modo `prompt-file`/`.prompt.yml` corrompe el YAML cuando se
+> sustituye contexto multilínea (bug real que rompió la primera corrida en CI), y sobre todo,
+> **GitHub Models se retiró por completo el 30 de julio de 2026** (ver
+> [changelog de GitHub](https://github.blog/changelog/2026-07-30-github-models-is-now-retired/)) —
+> dejó de existir para todos los usuarios, no fue un problema de configuración nuestro. Ollama
+> autohospedado evita depender de que un tercero mantenga un servicio gratuito indefinidamente.
 
-1. El workflow reúne contexto (README/CHANGELOG, diffs recientes, diff del PR, etc.) con `git`/`gh` y lo pasa como `prompt` a la acción.
-2. Se llama al modelo con el system prompt versionado en `scripts/agents/*.md`, que le pide responder **únicamente** con un objeto JSON (descrito en texto dentro del propio prompt).
-   > Nota de diseño: la acción también ofrece un modo `prompt-file` con archivos `.prompt.yml` que fuerza el JSON vía `responseFormat: json_schema`. Se descartó: su sustitución de variables `{{var}}` reemplaza texto de forma cruda *antes* de volver a interpretar el YAML, y un contexto multilínea (p. ej. el README con bloques ` ```markdown `) rompe el parseo. El enfoque actual (prompt plano + parseo tolerante del lado del script) es más simple y no depende de ese mecanismo.
-3. [`scripts/agents/apply_edits.py`](scripts/agents/apply_edits.py) (documentador y revisor de bugs) y [`scripts/agents/parse_mr_response.py`](scripts/agents/parse_mr_response.py) (revisor de MR) extraen el JSON de la respuesta cruda del modelo tolerando que venga envuelto en ` ```json ` o con texto alrededor; si no encuentran nada parseable, degradan de forma segura (`action: none` / `classification: human_review`) en vez de fallar el workflow.
-4. Para el documentador y el revisor de bugs, `apply_edits.py` además valida la acción: solo aplica un "fix mecánico" si el archivo está en una lista blanca y cada reemplazo de texto propuesto aparece **exactamente una vez** en el archivo; si no, degrada automáticamente a abrir un issue en vez de arriesgar corromper un archivo. Esta es una limitación deliberada del diseño: sin GPU ni compilador en el runner, no hay forma de verificar que un parche a `kernels/`, `src/` o `include/` sea correcto, así que esos casos siempre terminan en issue o en "requiere intervención humana", nunca en un PR automático.
+Igual que con GitHub Models, el diseño es "el modelo responde JSON en texto plano → un script determinista valida y ejecuta la acción" (Ollama no es un agente autónomo con acceso a shell/archivos, es una llamada de inferencia):
+
+1. El workflow instala Ollama (`curl -fsSL https://ollama.com/install.sh | sh`, si no está ya instalado), descarga el modelo (`ollama pull`, cacheado entre corridas con `actions/cache` sobre `~/.ollama` — sin esto cada corrida bajaría ~4-5 GB de nuevo) y reúne contexto (README/CHANGELOG, diffs recientes, diff del PR) con `git`/`gh` en un archivo de texto.
+2. [`scripts/agents/run_ollama.sh`](scripts/agents/run_ollama.sh) levanta `ollama serve` si no está corriendo, y llama a `/api/generate` con `format: "json"` (Ollama fuerza sintaxis JSON válida a nivel de API) usando el system prompt de `scripts/agents/*.md` y el contexto como `prompt`.
+3. [`scripts/agents/apply_edits.py`](scripts/agents/apply_edits.py) (documentador y revisor de bugs) y [`scripts/agents/parse_mr_response.py`](scripts/agents/parse_mr_response.py) (revisor de MR) extraen el JSON de la respuesta tolerando que venga envuelto en ` ```json ` o con texto alrededor; si no encuentran nada parseable, degradan de forma segura (`action: none` / `classification: human_review`) en vez de fallar el workflow.
+4. Para el documentador y el revisor de bugs, `apply_edits.py` además valida la acción: solo aplica un "fix mecánico" si el archivo está en una lista blanca y cada reemplazo de texto propuesto aparece **exactamente una vez** en el archivo; si no, degrada automáticamente a abrir un issue en vez de arriesgar corromper un archivo. Esta es una limitación deliberada del diseño: sin GPU ni compilador en el runner, no hay forma de verificar que un parche a `kernels/`, `src/` o `include/` sea correcto, así que esos casos siempre terminan en issue o en "requiere intervención humana", nunca en un PR automático. (Un modelo local más chico que gpt-4o también es más propenso a alucinar hallazgos que no existen — ver el punto del tope de 1 issue abierto más abajo, pensado justo para eso.)
 5. El workflow ejecuta la acción resultante (`gh issue create`, `gh pr create`, o `gh pr comment`) con `gh`.
 
 | Agente | Workflow | Prompt | Frecuencia | Criterio mecánico (arregla solo) | Criterio humano (solo comenta/issue) |
@@ -61,13 +70,13 @@ Reglas comunes a los tres agentes:
 - El revisor de MR **nunca** ejecuta `gh pr merge`: solo comenta la clasificación del PR.
 - Cada ejecución reporta como máximo un hallazgo (un issue o un PR), muy por debajo del tope de 5 issues automáticos por semana sin revisión humana.
 - El documentador y el revisor de bugs además se limitan a **1 issue abierto propio a la vez** (label `agent`+`documentation` o `agent`+`bug` respectivamente): si ya hay uno pendiente de revisión humana, la siguiente corrida no crea otro aunque vuelva a encontrar (o alucinar) el mismo hallazgo. Evita que un falso positivo recurrente inunde el tablero de issues/PR duplicados — hay que cerrar el existente para que el agente pueda reportar algo nuevo.
-- El tag `@v1` de `actions/ai-inference` fija una versión concreta de la acción (Node 20, sin `max-completion-tokens` ni `responseFormat`); los inputs usados (`prompt`, `system-prompt-file`, `model`, `max-tokens`) son los que existen en esa versión exacta, verificados contra su `action.yml`.
 
 ### Requisitos y límites conocidos
 
-- **Permisos del repo**: los tres workflows solo necesitan `permissions: models: read` (ya configurado en cada uno) y el `GITHUB_TOKEN` automático. Además, Settings → Actions → General → Workflow permissions debe tener marcado **"Allow GitHub Actions to create and approve pull requests"** — sin esto, el documentador y el revisor de bugs fallan en `gh pr create` con `GitHub Actions is not permitted to create or approve pull requests` cuando encuentran un fix mecánico (ya está habilitado en este repo).
-- **Límite de tokens del tier gratuito**: GitHub Models rechaza requests de más de 8000 tokens totales (prompt + system prompt + tokens de salida pedidos) para `openai/gpt-4o`. Por eso el contexto que arma cada workflow es deliberadamente acotado (resúmenes/diffstat en vez de diffs completos, encabezados de README en vez del archivo completo) y además se trunca con un tope de caracteres como respaldo antes de enviarlo.
-- Si `models: read` falla con un error de permisos, revisar Settings → Copilot → Model providers (o el equivalente a nivel de organización) para confirmar que el acceso a GitHub Models esté habilitado.
+- **Sin secrets**: no se necesita ninguna API key. Sí se necesita, igual que antes, que Settings → Actions → General → Workflow permissions tenga marcado **"Allow GitHub Actions to create and approve pull requests"** (ya habilitado en este repo) — sin esto, el documentador y el revisor de bugs fallan en `gh pr create` con `GitHub Actions is not permitted to create or approve pull requests` cuando encuentran un fix mecánico.
+- **Sin GPU en el runner gratuito**: la inferencia corre en CPU y puede tardar varios minutos por respuesta — es esperable, no un error. Cada workflow le da `timeout-minutes: 35` al paso de inferencia. Si el job se cae por timeout de todos modos, bajar `OLLAMA_MODEL` (env al inicio de cada workflow) de `qwen2.5-coder:7b-instruct-q4_K_M` a `qwen2.5-coder:3b` — pierde algo de calidad pero corre más rápido. Cambiar el modelo invalida el cache (`actions/cache` usa el nombre del modelo en la key), así que la primera corrida con el modelo nuevo vuelve a descargarlo.
+- **Cache del modelo obligatorio**: sin `actions/cache` sobre `~/.ollama`, cada corrida descargaría el modelo (~4-5 GB) de nuevo. El cache se invalida solo si cambia `OLLAMA_MODEL`.
+- Para iterar más rápido durante desarrollo, corran Ollama localmente (`ollama pull qwen2.5-coder:7b-instruct-q4_K_M` + `bash scripts/agents/run_ollama.sh scripts/agents/<agente>.md <archivo-de-contexto> <salida>`) antes de probar contra CI.
 
 ## Estructura de Archivos
 

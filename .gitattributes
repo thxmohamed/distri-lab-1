@@ -1,0 +1,4 @@
+# Los scripts de shell deben mantener LF: Windows con autocrlf=true los
+# convertiria a CRLF, lo que puede romper su ejecucion en los runners
+# Linux de CI (ver scripts/agents/run_ollama.sh).
+*.sh text eol=lf

@@ -5,10 +5,10 @@ name: Agent - Revisor de MR
 # fusiona el PR: solo comenta su clasificacion (mecanico y mergeable, o
 # requiere revision humana).
 #
-# Motor: GitHub Models (actions/ai-inference), gratuito. El system prompt
-# vive en scripts/agents/mr-reviewer.md y pide JSON en texto plano (no se
-# usa el modo prompt-file/.prompt.yml: su sustitucion de plantillas
-# corrompe el YAML con contexto multilinea, ver historial de commits).
+# Motor: Ollama local dentro del propio runner (ver agent-documentation.yml
+# para el detalle de por que se cambio de GitHub Models -- se retiro por
+# completo el 30 de julio de 2026). El system prompt vive en
+# scripts/agents/mr-reviewer.md.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -17,7 +17,12 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  models: read
+
+env:
+  # Recomendado por el profesor: mejor balance calidad/tamano para C++/CUDA.
+  # Si el job se cae por timeout en el runner gratuito (sin GPU), bajar a
+  # qwen2.5-coder:3b -- pierde algo de calidad pero corre mas rapido.
+  OLLAMA_MODEL: "qwen2.5-coder:7b-instruct-q4_K_M"
 
 jobs:
   mr-review-agent:
@@ -49,6 +54,21 @@ jobs:
           fi
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
+      - name: Cache de modelos de Ollama
+        if: steps.pr.outputs.number != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ollama-models-${{ runner.os }}-${{ env.OLLAMA_MODEL }}
+
+      - name: Instalar Ollama
+        if: steps.pr.outputs.number != ''
+        run: |
+          if ! command -v ollama >/dev/null 2>&1; then
+            curl -fsSL https://ollama.com/install.sh | sh
+          fi
+          ollama --version
+
       - name: Reunir contexto del PR
         id: gather
         if: steps.pr.outputs.number != ''
@@ -58,45 +78,40 @@ jobs:
           CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
-          CONTEXT=$(
-            {
-              echo "## CI_CONCLUSION: $CI_CONCLUSION"
-              echo
-              echo "## Titulo y descripcion del PR"
-              gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
-                --json title,body --jq '"# " + .title + "\n\n" + (.body // "(sin descripcion)")'
-              echo
-              echo "## Resumen de archivos cambiados"
-              gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json files \
-                --jq '.files[] | "- " + .path + " (+" + (.additions|tostring) + "/-" + (.deletions|tostring) + ")"'
-              echo
-              echo "## Diff del PR"
-              gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}"
-            }
-          )
-          # GitHub Models limita el request completo a 8000 tokens en el
-          # tier gratuito; los diffs de PRs grandes (p. ej. CudaBuffer,
-          # integracion Euler GPU) pueden superarlo largamente.
-          MAX_CHARS=6000
-          if [ "${#CONTEXT}" -gt "$MAX_CHARS" ]; then
-            CONTEXT="${CONTEXT:0:$MAX_CHARS}"$'\n[... diff truncado por limite de tokens del modelo gratuito; si no alcanzas a ver todo el cambio, clasifica como human_review y dilo en "reason" ...]'
-          fi
           {
-            echo 'context<<AGENT_CONTEXT_EOF'
-            printf '%s\n' "$CONTEXT"
-            echo 'AGENT_CONTEXT_EOF'
-          } >> "$GITHUB_OUTPUT"
+            echo "## CI_CONCLUSION: $CI_CONCLUSION"
+            echo
+            echo "## Titulo y descripcion del PR"
+            gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
+              --json title,body --jq '"# " + .title + "\n\n" + (.body // "(sin descripcion)")'
+            echo
+            echo "## Resumen de archivos cambiados"
+            gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json files \
+              --jq '.files[] | "- " + .path + " (+" + (.additions|tostring) + "/-" + (.deletions|tostring) + ")"'
+            echo
+            echo "## Diff del PR"
+            gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}"
+          } > "$RUNNER_TEMP/context.txt"
+          # Los diffs de PRs grandes (p. ej. CudaBuffer, integracion Euler
+          # GPU) pueden ser enormes; se trunca por seguridad para no hacer
+          # la inferencia local (CPU, sin GPU) mas lenta de lo necesario.
+          MAX_CHARS=8000
+          if [ "$(wc -c < "$RUNNER_TEMP/context.txt")" -gt "$MAX_CHARS" ]; then
+            head -c "$MAX_CHARS" "$RUNNER_TEMP/context.txt" > "$RUNNER_TEMP/context.trunc.txt"
+            printf '\n[... diff truncado por tamano; si no alcanzas a ver todo el cambio, clasifica como human_review y dilo en "reason" ...]\n' >> "$RUNNER_TEMP/context.trunc.txt"
+            mv "$RUNNER_TEMP/context.trunc.txt" "$RUNNER_TEMP/context.txt"
+          fi
 
       - name: Ejecutar agente revisor de MR
         id: inference
         if: steps.pr.outputs.number != ''
-        uses: actions/ai-inference@v1
-        with:
-          system-prompt-file: scripts/agents/mr-reviewer.md
-          prompt: |
-            ${{ steps.gather.outputs.context }}
-          model: openai/gpt-4o
-          max-tokens: "800"
+        timeout-minutes: 35
+        run: |
+          bash scripts/agents/run_ollama.sh \
+            scripts/agents/mr-reviewer.md \
+            "$RUNNER_TEMP/context.txt" \
+            "$RUNNER_TEMP/response.txt"
+          echo "response-file=$RUNNER_TEMP/response.txt" >> "$GITHUB_OUTPUT"
 
       - name: Parsear respuesta del agente
         id: parse
