@@ -24,6 +24,12 @@ Que buscar:
 No tienes acceso a shell, compilador ni GPU: no puedes verificar que un
 parche compile o pase los tests. Por eso debes ser conservador.
 
+Antes de reportar una tolerancia desalineada, compara con cuidado el valor
+EXACTO que aparece en tests/ contra el que aparece en README.md; si son
+iguales (aunque esten escritos en variables o formatos distintos), NO hay
+hallazgo, responde "none". No reportes un mismatch que no puedas citar
+literalmente de ambas fuentes en tu "reason".
+
 Clasifica el hallazgo mas importante (como maximo uno por ejecucion) en el
 campo "action":
 

@@ -88,10 +88,20 @@ def main() -> int:
     data = load_json_response(response_path)
 
     action = data.get("action", "none")
-    title = data.get("title", "") or ""
-    reason = data.get("reason", "") or ""
+    title = (data.get("title", "") or "").strip()
+    reason = (data.get("reason", "") or "").strip()
     issue_body = data.get("issue_body", "") or ""
     target_file = data.get("target_file", "") or ""
+
+    # The model occasionally returns a non-"none" action with an empty
+    # title (seen in practice: the edit/target_file were fine, "title" was
+    # just ""), which would otherwise reach `gh issue create --title ""`
+    # and fail with "title can't be blank", leaving an orphan branch with
+    # no linked issue/PR. Never let a blank title reach gh.
+    if action != "none" and not title:
+        title = f"[agente] hallazgo sin titulo ({action})"
+    if action != "none" and not reason:
+        reason = "(el modelo no entrego una justificacion)"
     edits = data.get("edits", []) or []
 
     def is_allowed(path: str) -> bool:

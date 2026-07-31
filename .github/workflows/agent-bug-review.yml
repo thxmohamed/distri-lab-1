@@ -43,31 +43,43 @@ jobs:
         id: gather
         run: |
           set -euo pipefail
-          BASE=$(git rev-parse HEAD~5 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          BASE=$(git rev-parse HEAD~3 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          CONTEXT=$(
+            {
+              echo "## Ultimos 10 commits"
+              git log --oneline -10
+
+              echo
+              echo "## Resumen de cambios (diffstat, no el diff completo) desde $BASE sobre kernels/, src/, include/, tests/"
+              git diff --stat "$BASE"..HEAD -- kernels/ src/ include/ tests/ || true
+
+              echo
+              echo "## Archivos con llamadas CUDA sin CUDA_CHECK en el mismo archivo (heuristica con grep, puede tener falsos positivos)"
+              for f in $(grep -rlE 'cudaMalloc|cudaMemcpy|cudaFree|<<<' kernels/ src/cuda 2>/dev/null || true); do
+                if ! grep -q "CUDA_CHECK" "$f"; then
+                  echo "- $f"
+                fi
+              done
+
+              echo
+              echo "## Tolerancias rtol/atol mencionadas en tests/"
+              grep -rn "rtol\|atol" tests/ || echo "(sin menciones)"
+
+              echo
+              echo "## Tolerancias rtol/atol documentadas en README.md"
+              grep -n "rtol\|atol" README.md || echo "(sin menciones)"
+            }
+          )
+          # GitHub Models limita el request completo (prompt + system prompt +
+          # tokens pedidos) a 8000 tokens en el tier gratuito. Se trunca el
+          # contexto por seguridad ademas de haber recortado su contenido arriba.
+          MAX_CHARS=6000
+          if [ "${#CONTEXT}" -gt "$MAX_CHARS" ]; then
+            CONTEXT="${CONTEXT:0:$MAX_CHARS}"$'\n[... contexto truncado por limite de tokens del modelo gratuito ...]'
+          fi
           {
             echo 'context<<AGENT_CONTEXT_EOF'
-            echo "## Ultimos 15 commits"
-            git log --oneline -15
-
-            echo
-            echo "## Diff reciente (desde $BASE) sobre kernels/, src/, include/, tests/"
-            git diff "$BASE"..HEAD -- kernels/ src/ include/ tests/ || true
-
-            echo
-            echo "## Archivos con llamadas CUDA sin CUDA_CHECK en el mismo archivo (heuristica con grep, puede tener falsos positivos)"
-            for f in $(grep -rlE 'cudaMalloc|cudaMemcpy|cudaFree|<<<' kernels/ src/cuda 2>/dev/null || true); do
-              if ! grep -q "CUDA_CHECK" "$f"; then
-                echo "- $f"
-              fi
-            done
-
-            echo
-            echo "## Tolerancias rtol/atol mencionadas en tests/"
-            grep -rn "rtol\|atol" tests/ || echo "(sin menciones)"
-
-            echo
-            echo "## Tolerancias rtol/atol documentadas en README.md"
-            grep -n "rtol\|atol" README.md || echo "(sin menciones)"
+            printf '%s\n' "$CONTEXT"
             echo 'AGENT_CONTEXT_EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -79,7 +91,7 @@ jobs:
           prompt: |
             ${{ steps.gather.outputs.context }}
           model: openai/gpt-4o
-          max-tokens: "2000"
+          max-tokens: "1200"
 
       - name: Aplicar clasificacion
         id: apply
@@ -101,6 +113,18 @@ jobs:
 
           if [ -z "$ACTION" ] || [ "$ACTION" = "none" ]; then
             echo "Sin hallazgos que reportar en esta ejecucion."
+            exit 0
+          fi
+
+          # Como el modelo puede volver a encontrar (o alucinar) el mismo
+          # hallazgo en cada corrida, se limita a 1 issue abierto con label
+          # agent+bug a la vez: si ya hay uno pendiente, no se crea otro.
+          # Evita inundar el tablero de duplicados hasta que una persona
+          # cierre el anterior.
+          OPEN_AGENT_BUG_ISSUES=$(gh issue list --repo "${{ github.repository }}" --state open --label agent \
+            --json labels --jq '[.[] | select(.labels[].name == "bug")] | length')
+          if [ "$OPEN_AGENT_BUG_ISSUES" -gt 0 ]; then
+            echo "Ya hay $OPEN_AGENT_BUG_ISSUES issue(s) abierto(s) con label agent+bug; se omite crear uno nuevo para evitar duplicados."
             exit 0
           fi
 
