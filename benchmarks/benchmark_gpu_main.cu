@@ -60,6 +60,7 @@ int main() {
            << " cpu_threads=" << cpuThreads << "\n";
     header.close();
 
+    appendCommandOutput("hostname", "hostname");
     appendCommandOutput("nvidia-smi", "nvidia-smi");
     appendCommandOutput("nvcc --version", "nvcc --version");
 
