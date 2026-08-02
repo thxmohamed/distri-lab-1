@@ -21,6 +21,8 @@ output/
 # Excepción: resultados del cluster
 !resultados_cluster/
 !resultados_cluster/**
+!resultados_cluster_lab2/
+!resultados_cluster_lab2/**
 
 # OS/editor noise
 .DS_Store

@@ -82,6 +82,13 @@ Reglas comunes a los tres agentes:
 
 ```
 distri-lab-1/
+├── .github/
+│   └── workflows/               # CI y agentes de IA
+│       ├── ci.yml
+│       ├── docker.yml
+│       ├── agent-documentation.yml
+│       ├── agent-bug-review.yml
+│       └── agent-mr-review.yml
 ├── include/                    # Interfaces públicas de todas las clases
 │   ├── Particle.h
 │   ├── NBodySystem.h
@@ -89,19 +96,32 @@ distri-lab-1/
 │   ├── Integrator.h
 │   ├── MetricsCalculator.h
 │   ├── Benchmark.h
-│   └── Visualizer.h
+│   ├── Visualizer.h
+│   ├── CudaBuffer.h            # RAII cudaMalloc/cudaFree
+│   └── NBodyDeviceState.h      # Estado SoA en device
+├── kernels/                    # Kernels CUDA
+│   ├── CudaCheck.cuh
+│   ├── accelerations.cu/.cuh
+│   └── metrics.cu/.cuh
 ├── src/                        # Implementaciones
 │   ├── main.cpp
 │   ├── Visualizer.cpp
 │   ├── model/
 │   │   ├── Particle.cpp
 │   │   └── NBodySystem.cpp
-│   └── simulation/
-│       ├── Integrator.cpp
-│       └── NBodySimulator.cpp
+│   ├── simulation/
+│   │   ├── Integrator.cpp
+│   │   └── NBodySimulator.cpp
+│   └── cuda/                   # Rutas GPU de NBodySystem/NBodySimulator
+│       ├── NBodyDeviceState.cu
+│       ├── NBodySystemGpu.cu
+│       └── NBodySimulatorGpu.cu
 ├── benchmarks/                 # Medición de rendimiento
 │   ├── Benchmark.cpp
-│   └── MetricsCalculator.cpp
+│   ├── MetricsCalculator.cpp
+│   ├── benchmark_main.cpp
+│   ├── BenchmarkGpu.cu
+│   └── benchmark_gpu_main.cu
 ├── tests/
 │   ├── unit/                   # Pruebas de clases en aislamiento
 │   │   ├── unit_tests.cpp
@@ -113,16 +133,33 @@ distri-lab-1/
 │       ├── test_NBodySystem_Parallel.cpp
 │       ├── test_NBodySystem_Physics.cpp
 │       ├── test_NBodySimulator.cpp
-│       └── test_Regression.cpp
+│       ├── test_Regression.cpp
+│       ├── test_cuda_buffer.cu
+│       ├── test_NBodyDeviceState.cu
+│       ├── test_accelerations.cu
+│       └── test_NBodySimulatorGpu.cu
 ├── scripts/                    # Generación de gráficos
 │   ├── plot_performance.py
 │   ├── plot_schedule.py
 │   ├── plot_amdahl.py
 │   ├── plot_trajectories.py
-│   └── plot_energy.py
-├── resultados_cluster/         # Resultados obtenidos en el cluster Xi (DIINF)
-│   ├── dat/                    # Archivos de datos (.dat) generados por benchmark y analysis
-│   └── png/                    # Gráficos (.png) generados por make plots
+│   ├── plot_energy.py
+│   ├── plot_physics.py
+│   ├── plot_energy_drift.py
+│   ├── plot_clauses.py
+│   ├── plot_gpu_speedup_vs_n.py
+│   ├── plot_gpu_transfer_impact.py
+│   ├── plot_gpu_blockdim.py
+│   ├── plot_gpu_amdahl.py
+│   ├── plot_gpu_variant_comparison.py
+│   └── agents/                 # Scripts de los 3 agentes de IA (ver sección Agentes de IA)
+├── resultados_cluster/         # Resultados obtenidos en el cluster Xi (DIINF) — Lab 1
+│   ├── .dat/                   # Archivos de datos (.dat) generados por benchmark y analysis
+│   └── .png/                   # Gráficos (.png) generados por make plots
+├── resultados_cluster_lab2/    # Resultados obtenidos en el cluster Xi (DIINF) — Lab 2
+│   ├── .dat/                   # .dat de benchmark-gpu/benchmark/analysis + cluster_run.log
+│   └── .png/                   # Gráficos (.png) generados por make plots/plots-gpu
+├── CHANGELOG.md
 ├── Dockerfile
 ├── Makefile
 └── README.md
@@ -132,22 +169,30 @@ distri-lab-1/
 
 La estructura del proyecto se diseñó para agrupar los archivos por la funcionalidad de estos, facilitando así la lectura y navegación del código. Para esto se han creado carpetas específicas para cada tipo de archivo, donde:
 
+- **`.github/workflows/`** — Contiene el pipeline de CI (`ci.yml`, `docker.yml`) y los tres agentes de IA (documentador, revisor de bugs, revisor de MR), cada uno como su propio workflow.
+
 - **`include/`** — Contiene los encabezados (`.h`) de todas las clases del proyecto, separados de sus implementaciones. Esta separación sigue la convención estándar de C++: los encabezados definen la interfaz pública de cada clase, permitiendo que cualquier módulo los incluya sin necesidad de conocer los detalles de implementación. También facilita la compilación incremental, ya que un cambio en un `.cpp` no obliga a recompilar los módulos que solo dependen del `.h`.
+
+- **`kernels/`** — Contiene los kernels CUDA (`__global__`) del cálculo de aceleraciones (básico y shared memory) y de métricas (reducción/`atomicAdd`), junto con sus lanzadores host y la macro `CUDA_CHECK`.
 
 - **`src/`** — Contiene el código fuente del proyecto, es la representación completa del simulador. Organizado por subcarpetas según funcionalidad:
   - **`src/model/`** — Contiene las entidades que describen el sistema físico: las partículas con masa, posición y velocidad, y el contenedor que las agrupa junto con la constante gravitacional y el suavizado.
   - **`src/simulation/`** — Contiene la lógica de la evolución del sistema a través del tiempo.
+  - **`src/cuda/`** — Contiene las rutas GPU de `NBodySystem`/`NBodySimulator` (subida/bajada de estado, integración de Euler y cálculo de energía usando los kernels de `kernels/`).
   - **`src/Visualizer.cpp`** — Contiene la lógica de exportación de datos para visualización.
 
-- **`benchmarks/`** — Contiene el código que mide el desempeño del simulador, midiendo métricas físicas y de rendimiento asociadas a la simulación.
+- **`benchmarks/`** — Contiene el código que mide el desempeño del simulador (CPU y GPU), midiendo métricas físicas y de rendimiento asociadas a la simulación.
 
 - **`tests/`** — Contiene el código que comprueba que el simulador se comporta como es esperado. Los tipos de prueba se dividen en:
   - **`tests/unit/`** — Pruebas que verifican el comportamiento de una sola clase de manera aislada.
-  - **`tests/integration/`** — Pruebas que verifican la interacción entre diferentes módulos del sistema.
+  - **`tests/integration/`** — Pruebas que verifican la interacción entre diferentes módulos del sistema, incluyendo la equivalencia CPU vs. GPU (`test_accelerations.cu`, `test_NBodySimulatorGpu.cu`).
 
-- **`scripts/`** — Contiene los scripts Python que leen los archivos `.dat` generados por la simulación y producen los gráficos de rendimiento y análisis físico.
+- **`scripts/`** — Contiene los scripts Python que leen los archivos `.dat` generados por la simulación y producen los gráficos de rendimiento y análisis físico (CPU y GPU).
+  - **`scripts/agents/`** — Contiene los prompts y scripts de los tres agentes de IA (ver sección [Agentes de IA](#agentes-de-ia)).
 
-- **`resultados_cluster/`** — Contiene los resultados obtenidos al ejecutar el benchmark y el análisis en el cluster Xi del DIINF, organizados en subcarpetas `dat/` y `png/`.
+- **`resultados_cluster/`** — Contiene los resultados obtenidos al ejecutar el benchmark y el análisis en el cluster Xi del DIINF (Lab 1), organizados en subcarpetas `.dat/` y `.png/`.
+
+- **`resultados_cluster_lab2/`** — Análogo para el Lab 2: `.dat/` con `benchmark_results.dat`, `blockdim_study.dat`, `cluster_run.log` y los `.dat` de `make benchmark`/`make analysis`; `.png/` con los gráficos de `make plots`/`make plots-gpu`.
 
 ## Compilación
 
@@ -277,6 +322,72 @@ rendimiento solo valen si salen de ahi, no de una corrida en CI.
   paralelos)
 - `gpu_variant_comparison.png` — básica vs. shared memory, mismo N
 - Reutiliza `trajectories_plot.png`/`energy_plot.png` del Lab 1 sin cambios
+
+### Ejecución en el clúster DIINF
+
+El nodo GPU, modelo de GPU, driver y versión de CUDA no se documentan a mano: cada corrida los
+registra automáticamente en `cluster_run.log` (`hostname`, `nvidia-smi`, `nvcc --version`). Por
+ejemplo, en la corrida del 2026-08-02: nodo `xigpu01`, GPU NVIDIA A30, driver 580.173.02, CUDA
+13.0 (`nvidia-smi`), `nvcc` release 12.1, V12.1.105.
+
+Requiere VPN USACH activa y acceso SSH al clúster. Reemplazar `<tu_usuario>` por el usuario del
+DIINF y `C:\ruta\a\tu\repositorio\distri-lab-1` por la carpeta local donde esté clonado el repo.
+
+```
+# Copiar el repo actualizado al clúster
+scp -r "C:\ruta\a\tu\repositorio\distri-lab-1" <tu_usuario>@xi.diinf.usach.cl:~/
+
+# Conectarse
+ssh <tu_usuario>@xi.diinf.usach.cl
+
+# Verificar el entorno
+cd ~/distri-lab-1
+nvidia-smi
+nvcc --version
+
+# Compilar
+make
+```
+
+Script SLURM (`nano run_full_lab2.sh`, pegar y guardar):
+
+```
+#!/bin/bash
+#SBATCH --job-name=nbody_full_lab2
+#SBATCH --partition=GPU
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=24
+#SBATCH --time=03:00:00
+#SBATCH --output=full_%j.out
+#SBATCH --error=full_%j.err
+
+cd ~/distri-lab-1
+make benchmark
+make analysis
+make benchmark-gpu
+```
+
+Encolar, monitorear y generar los gráficos:
+
+```
+sbatch run_full_lab2.sh
+squeue -u $USER
+# sbatch imprime "Submitted batch job <ID>": usar ese <ID> en el nombre del .out
+cat full_<ID>.out
+
+make plots
+make plots-gpu
+```
+
+Traer los resultados de vuelta a la máquina local:
+
+```
+scp <tu_usuario>@xi.diinf.usach.cl:~/distri-lab-1/*.dat "C:\ruta\a\tu\repositorio\distri-lab-1\outputClusterLab2\dat\"
+scp <tu_usuario>@xi.diinf.usach.cl:~/distri-lab-1/cluster_run.log "C:\ruta\a\tu\repositorio\distri-lab-1\outputClusterLab2\"
+scp -r <tu_usuario>@xi.diinf.usach.cl:~/distri-lab-1/output/ "C:\ruta\a\tu\repositorio\distri-lab-1\outputClusterLab2\output"
+```
 
 ## Implementación CUDA
 
