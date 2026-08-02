@@ -3,8 +3,9 @@ import matplotlib.pyplot as plt
 
 data = np.loadtxt('blockdim_study.dat')
 
-# Compara kernel-only vs end-to-end a blockDim.x por defecto (256), variando N:
-# aisla el impacto de las transferencias host/device en cada variante.
+# Compara kernel-only vs aceleraciones con transferencias (sin integrar Euler) a
+# blockDim.x por defecto (256), variando N: aisla el impacto de las
+# transferencias host/device en cada variante.
 default_block = 256
 variant_names = {0: 'básico', 1: 'shared'}
 
@@ -15,14 +16,14 @@ for ax, variant in zip(axes, [0, 1]):
     N            = data[mask, 0]
     kernel_mean  = data[mask, 3]
     kernel_err   = data[mask, 4]
-    e2e_mean     = data[mask, 5]
-    e2e_err      = data[mask, 6]
+    transfers_mean = data[mask, 5]
+    transfers_err  = data[mask, 6]
     order = np.argsort(N)
 
     ax.errorbar(N[order], kernel_mean[order], yerr=kernel_err[order],
                 marker='o', label='kernel-only')
-    ax.errorbar(N[order], e2e_mean[order], yerr=e2e_err[order],
-                marker='s', label='end-to-end')
+    ax.errorbar(N[order], transfers_mean[order], yerr=transfers_err[order],
+                marker='s', label='con transferencias')
     ax.set_xlabel('N (cuerpos)')
     ax.set_title(f'Variante {variant_names[variant]}')
     ax.legend()

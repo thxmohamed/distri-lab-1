@@ -110,17 +110,35 @@ public:
                                       int steps, int repetitions);
 
     /**
-     * Mide el cálculo de aceleraciones en GPU de extremo a extremo, incluyendo
-     * las transferencias host/device de cada llamada (subida de estado,
-     * ejecución del kernel, sincronización y descarga de resultados).
+     * Mide únicamente el cálculo de aceleraciones en GPU con transferencias
+     * host/device incluidas (subida de estado, kernel, sincronización y
+     * descarga de resultados), sin integrar Euler. Aísla el costo de las
+     * transferencias frente a benchmarkKernelOnly.
+     * @param variant 0 = básico, 1 = shared memory
+     */
+    static Result benchmarkAccelerationsWithTransfers(int N, int variant, int block_size,
+                                                      int steps, int repetitions);
+
+    /**
+     * Mide un paso de simulación completo en GPU (stepEulerGpu: aceleraciones
+     * + transferencias + integración de Euler en host), repetido "steps"
+     * veces. Es la medición end-to-end real de un paso de la simulación.
      * @param variant 0 = básico, 1 = shared memory
      */
     static Result benchmarkEndToEnd(int N, int variant, int block_size,
                                     int steps, int repetitions);
 
     /**
-     * Compara el mismo cálculo de aceleraciones en CPU (paralelo, referencia
-     * static/chunk=32) contra GPU end-to-end, para el mismo N.
+     * Mide un paso de simulación completo en CPU serial (integrateEuler con
+     * use_parallel_accel_=false, la ruta serial del Lab 1: aceleraciones +
+     * kick + drift), sin OpenMP. Comparable con benchmarkEndToEnd (GPU).
+     */
+    static Result benchmarkEndToEndSerial(int N, int steps, int repetitions);
+
+    /**
+     * Compara un paso de simulación completo en GPU (benchmarkEndToEnd)
+     * contra un paso de simulación completo en CPU serial (benchmarkEndToEndSerial),
+     * para el mismo N.
      * @param variant 0 = básico, 1 = shared memory (usado en la ruta GPU)
      */
     static CpuGpuComparison compareCpuGpu(int N, int variant, int block_size,

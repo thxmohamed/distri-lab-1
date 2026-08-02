@@ -126,8 +126,10 @@ benchmark-gpu:
 		benchmarks/BenchmarkGpu.cu \
 		benchmarks/Benchmark.cpp \
 		kernels/accelerations.cu \
+		kernels/metrics.cu \
 		src/cuda/NBodyDeviceState.cu \
 		src/cuda/NBodySystemGpu.cu \
+		src/cuda/NBodySimulatorGpu.cu \
 		src/model/Particle.cpp \
 		src/model/NBodySystem.cpp \
 		src/simulation/Integrator.cpp \
