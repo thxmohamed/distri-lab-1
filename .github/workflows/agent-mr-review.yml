@@ -1,0 +1,129 @@
+name: Agent - Revisor de MR
+
+# Se dispara cuando el pipeline de CI ("Compile and Test", definido en
+# ci.yml con name: CI) termina de correr sobre un pull request. Nunca
+# fusiona el PR: solo comenta su clasificacion (mecanico y mergeable, o
+# requiere revision humana).
+#
+# Motor: GitHub Models (actions/ai-inference), gratuito. El system prompt
+# vive en scripts/agents/mr-reviewer.md y pide JSON en texto plano (no se
+# usa el modo prompt-file/.prompt.yml: su sustitucion de plantillas
+# corrompe el YAML con contexto multilinea, ver historial de commits).
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+jobs:
+  mr-review-agent:
+    name: Comentar PR tras CI
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Resolver numero de PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Se usa primero el payload del propio evento (funciona sin
+          # importar si el PR ya fue mergeado/cerrado entre que termino el
+          # CI y que corrio este job); gh pr list --state all es el
+          # respaldo para casos donde ese campo venga vacio.
+          PR_NUMBER=$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")
+          if [ -z "$PR_NUMBER" ]; then
+            PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" --state all \
+              --head "${{ github.event.workflow_run.head_branch }}" \
+              --json number --jq '.[0].number')
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Reunir contexto del PR
+        id: gather
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          CONTEXT=$(
+            {
+              echo "## CI_CONCLUSION: $CI_CONCLUSION"
+              echo
+              echo "## Titulo y descripcion del PR"
+              gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
+                --json title,body --jq '"# " + .title + "\n\n" + (.body // "(sin descripcion)")'
+              echo
+              echo "## Resumen de archivos cambiados"
+              gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json files \
+                --jq '.files[] | "- " + .path + " (+" + (.additions|tostring) + "/-" + (.deletions|tostring) + ")"'
+              echo
+              echo "## Diff del PR"
+              gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}"
+            }
+          )
+          # GitHub Models limita el request completo a 8000 tokens en el
+          # tier gratuito; los diffs de PRs grandes (p. ej. CudaBuffer,
+          # integracion Euler GPU) pueden superarlo largamente.
+          MAX_CHARS=6000
+          if [ "${#CONTEXT}" -gt "$MAX_CHARS" ]; then
+            CONTEXT="${CONTEXT:0:$MAX_CHARS}"$'\n[... diff truncado por limite de tokens del modelo gratuito; si no alcanzas a ver todo el cambio, clasifica como human_review y dilo en "reason" ...]'
+          fi
+          {
+            echo 'context<<AGENT_CONTEXT_EOF'
+            printf '%s\n' "$CONTEXT"
+            echo 'AGENT_CONTEXT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ejecutar agente revisor de MR
+        id: inference
+        if: steps.pr.outputs.number != ''
+        uses: actions/ai-inference@v1
+        with:
+          system-prompt-file: scripts/agents/mr-reviewer.md
+          prompt: |
+            ${{ steps.gather.outputs.context }}
+          model: openai/gpt-4o
+          max-tokens: "800"
+
+      - name: Parsear respuesta del agente
+        id: parse
+        if: steps.pr.outputs.number != ''
+        run: |
+          python3 scripts/agents/parse_mr_response.py "${{ steps.inference.outputs.response-file }}"
+
+      - name: Comentar PR con la clasificacion
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          CLASSIFICATION: ${{ steps.parse.outputs.classification }}
+          REASON: ${{ steps.parse.outputs.reason }}
+        run: |
+          set -euo pipefail
+
+          HEADER="✅ Mecánico y mergeable"
+          if [ "$CLASSIFICATION" != "mechanical_mergeable" ]; then
+            HEADER="⚠️ Requiere revisión humana"
+          fi
+
+          COMMENT_FILE="$RUNNER_TEMP/comment.md"
+          {
+            printf '**Agente revisor de MR — %s**\n\n' "$HEADER"
+            printf '%s\n\n' "$REASON"
+            echo "_Comentario generado automáticamente por scripts/agents/mr-reviewer.md. Este agente nunca fusiona el PR: la decisión final es siempre de una persona del equipo._"
+          } > "$COMMENT_FILE"
+
+          gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body-file "$COMMENT_FILE"

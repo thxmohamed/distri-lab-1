@@ -1,0 +1,176 @@
+name: Agent - Revisor de bugs
+
+# Corre diariamente sobre main (cron), ademas de poder dispararse
+# manualmente para dejar evidencia antes de la entrega.
+#
+# Motor: GitHub Models (actions/ai-inference), gratuito. El system prompt
+# vive en scripts/agents/bug-reviewer.md y pide JSON en texto plano (no se
+# usa el modo prompt-file/.prompt.yml: su sustitucion de plantillas
+# corrompe el YAML con contexto multilinea, ver historial de commits).
+# Decision de diseno: como este runner no compila CUDA ni corre tests con
+# GPU, el "open_fix_pr" automatico solo se permite sobre archivos bajo
+# tests/; cualquier otro hallazgo (incluyendo CUDA_CHECK faltante en
+# kernels/ o src/cuda/) se reporta como issue o como "requiere intervencion
+# humana", nunca como parche automatico.
+on:
+  schedule:
+    - cron: "0 9 * * *" # Todos los dias 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  models: read
+
+jobs:
+  bug-review-agent:
+    name: Revisar regresiones y robustez
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configurar git para commits del agente
+        run: |
+          git config user.name "bug-review-agent[bot]"
+          git config user.email "bug-review-agent@users.noreply.github.com"
+
+      - name: Reunir contexto
+        id: gather
+        run: |
+          set -euo pipefail
+          BASE=$(git rev-parse HEAD~3 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          CONTEXT=$(
+            {
+              echo "## Ultimos 10 commits"
+              git log --oneline -10
+
+              echo
+              echo "## Resumen de cambios (diffstat, no el diff completo) desde $BASE sobre kernels/, src/, include/, tests/"
+              git diff --stat "$BASE"..HEAD -- kernels/ src/ include/ tests/ || true
+
+              echo
+              echo "## Archivos con llamadas CUDA sin CUDA_CHECK en el mismo archivo (heuristica con grep, puede tener falsos positivos)"
+              for f in $(grep -rlE 'cudaMalloc|cudaMemcpy|cudaFree|<<<' kernels/ src/cuda 2>/dev/null || true); do
+                if ! grep -q "CUDA_CHECK" "$f"; then
+                  echo "- $f"
+                fi
+              done
+
+              echo
+              echo "## Tolerancias rtol/atol mencionadas en tests/"
+              grep -rn "rtol\|atol" tests/ || echo "(sin menciones)"
+
+              echo
+              echo "## Tolerancias rtol/atol documentadas en README.md"
+              grep -n "rtol\|atol" README.md || echo "(sin menciones)"
+            }
+          )
+          # GitHub Models limita el request completo (prompt + system prompt +
+          # tokens pedidos) a 8000 tokens en el tier gratuito. Se trunca el
+          # contexto por seguridad ademas de haber recortado su contenido arriba.
+          MAX_CHARS=6000
+          if [ "${#CONTEXT}" -gt "$MAX_CHARS" ]; then
+            CONTEXT="${CONTEXT:0:$MAX_CHARS}"$'\n[... contexto truncado por limite de tokens del modelo gratuito ...]'
+          fi
+          {
+            echo 'context<<AGENT_CONTEXT_EOF'
+            printf '%s\n' "$CONTEXT"
+            echo 'AGENT_CONTEXT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ejecutar agente revisor de bugs
+        id: inference
+        uses: actions/ai-inference@v1
+        with:
+          system-prompt-file: scripts/agents/bug-reviewer.md
+          prompt: |
+            ${{ steps.gather.outputs.context }}
+          model: openai/gpt-4o
+          max-tokens: "1200"
+
+      - name: Aplicar clasificacion
+        id: apply
+        run: |
+          python3 scripts/agents/apply_edits.py \
+            "${{ steps.inference.outputs.response-file }}" \
+            "tests/"
+
+      - name: Ejecutar accion segun clasificacion
+        env:
+          ACTION: ${{ steps.apply.outputs.action }}
+          TITLE: ${{ steps.apply.outputs.title }}
+          REASON: ${{ steps.apply.outputs.reason }}
+          ISSUE_BODY: ${{ steps.apply.outputs.issue_body }}
+          TARGET_FILE: ${{ steps.apply.outputs.target_file }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$ACTION" ] || [ "$ACTION" = "none" ]; then
+            echo "Sin hallazgos que reportar en esta ejecucion."
+            exit 0
+          fi
+
+          # Como el modelo puede volver a encontrar (o alucinar) el mismo
+          # hallazgo en cada corrida, se limita a 1 issue abierto con label
+          # agent+bug a la vez: si ya hay uno pendiente, no se crea otro.
+          # Evita inundar el tablero de duplicados hasta que una persona
+          # cierre el anterior.
+          OPEN_AGENT_BUG_ISSUES=$(gh issue list --repo "${{ github.repository }}" --state open --label agent \
+            --json labels --jq '[.[] | select(.labels[].name == "bug")] | length')
+          if [ "$OPEN_AGENT_BUG_ISSUES" -gt 0 ]; then
+            echo "Ya hay $OPEN_AGENT_BUG_ISSUES issue(s) abierto(s) con label agent+bug; se omite crear uno nuevo para evitar duplicados."
+            exit 0
+          fi
+
+          BODY_FILE="$RUNNER_TEMP/issue_body.md"
+          printf '%s\n' "$ISSUE_BODY" > "$BODY_FILE"
+
+          if [ "$ACTION" = "human_required" ]; then
+            FINAL_BODY_FILE="$RUNNER_TEMP/final_body.md"
+            {
+              printf 'Requiere intervención humana: %s\n\n' "$REASON"
+              cat "$BODY_FILE"
+            } > "$FINAL_BODY_FILE"
+            gh issue create --title "$TITLE" --body-file "$FINAL_BODY_FILE" --label "agent,bug"
+            exit 0
+          fi
+
+          if [ "$ACTION" = "open_issue" ]; then
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE" --label "agent,bug"
+            exit 0
+          fi
+
+          if [ "$ACTION" = "open_fix_pr" ]; then
+            if [ -z "$TARGET_FILE" ] || git diff --quiet -- "$TARGET_FILE"; then
+              echo "No hay cambios aplicados sobre $TARGET_FILE; se degrada a issue."
+              gh issue create --title "$TITLE" --body-file "$BODY_FILE" --label "agent,bug"
+              exit 0
+            fi
+
+            SLUG=$(printf '%s' "$TITLE" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//' | cut -c1-40)
+            BRANCH="agent/fix-${SLUG}-${GITHUB_RUN_ID}"
+
+            git checkout -b "$BRANCH"
+            git add "$TARGET_FILE"
+            git commit -m "fix(agent): $TITLE"
+            git push -u origin "$BRANCH"
+
+            ISSUE_URL=$(gh issue create --title "$TITLE" --body-file "$BODY_FILE" --label "agent,bug")
+            ISSUE_NUM=$(basename "$ISSUE_URL")
+
+            PR_BODY_FILE="$RUNNER_TEMP/pr_body.md"
+            printf 'Fix automático propuesto por el agente revisor de bugs.\n\nCloses #%s\n' "$ISSUE_NUM" > "$PR_BODY_FILE"
+
+            gh pr create \
+              --title "fix(agent): $TITLE" \
+              --body-file "$PR_BODY_FILE" \
+              --base main \
+              --head "$BRANCH" \
+              --label "agent:auto-fix,rol-4,bug"
+          fi

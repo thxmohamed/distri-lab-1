@@ -19,7 +19,7 @@ https://github.com/thxmohamed/distri-lab-1
 - **Sebastián del Solar Milla** — Rol 1, Kernels CUDA: `computeAccelerationsKernel` (básico) y `computeAccelerationsKernelShared`, lanzadores host, `CUDA_CHECK`, convención de índices y protección de bordes.
 - **Macarena García** — Rol 2, Host/device y memoria: `CudaBuffer` (RAII), layout SoA en device, `cudaMalloc`/`cudaMemcpy`/`cudaFree`, minimizar copias por paso temporal.
 - **Camila Lagos** — Rol 3, Integración y validación: integración de Euler en host tras sincronizar el device, tests CPU vs. GPU con tolerancia documentada, métricas `K`/`U` en GPU (reducción y `atomicAdd`).
-- **Mohamed Al-Marzuk** — Rol 4, Git, releases y agentes: protección de `main`, ramas `feature/*`/`fix/*`, `CHANGELOG.md`, issues del equipo, configuración de los tres agentes de IA (issue [#11](https://github.com/thxmohamed/distri-lab-1/issues/11), pendiente).
+- **Mohamed Al-Marzuk** — Rol 4, Git, releases y agentes: protección de `main`, ramas `feature/*`/`fix/*`, `CHANGELOG.md`, issues del equipo, configuración de los tres agentes de IA (ver sección [Agentes de IA](#agentes-de-ia)).
 - **Giuseppe Cavallieri** — Rol 5, Calidad, CI y visualización: extensión del pipeline CI, Docker con imagen CUDA, gráficos de speedup, estudio de `blockDim.x` y trayectorias con datos del clúster.
 
 ## Flujo Git
@@ -34,6 +34,40 @@ https://github.com/thxmohamed/distri-lab-1
 - **Pull requests**: cada PR debe referenciar al menos un issue (`Closes #N` o `Refs #N`) en su descripción.
 - **`CHANGELOG.md`**: sigue el formato [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); se actualiza en cada PR que agregue un cambio notable.
 - **Releases**: se etiquetan con tags anotados (`v1.0.0-lab1` marca la entrega del Lab 1; `v2.0.0-lab2` se etiquetará al cierre del Lab 2).
+
+## Agentes de IA
+
+El repositorio usa [GitHub Models](https://github.com/marketplace/models) vía la acción oficial [`actions/ai-inference`](https://github.com/actions/ai-inference) para correr tres agentes en CI. Es gratuito para este repositorio (público) y se autentica con el `GITHUB_TOKEN` propio de cada workflow — no requiere ningún secret ni cuenta adicional.
+
+A diferencia de un agente autónomo tipo Claude Code, `ai-inference` es una **llamada de inferencia única**: no ejecuta shell ni edita archivos por sí sola. El diseño acá es "el modelo clasifica en JSON estructurado → un script determinista ejecuta la acción":
+
+1. El workflow reúne contexto (README/CHANGELOG, diffs recientes, diff del PR, etc.) con `git`/`gh` y lo pasa como `prompt` a la acción.
+2. Se llama al modelo con el system prompt versionado en `scripts/agents/*.md`, que le pide responder **únicamente** con un objeto JSON (descrito en texto dentro del propio prompt).
+   > Nota de diseño: la acción también ofrece un modo `prompt-file` con archivos `.prompt.yml` que fuerza el JSON vía `responseFormat: json_schema`. Se descartó: su sustitución de variables `{{var}}` reemplaza texto de forma cruda *antes* de volver a interpretar el YAML, y un contexto multilínea (p. ej. el README con bloques ` ```markdown `) rompe el parseo. El enfoque actual (prompt plano + parseo tolerante del lado del script) es más simple y no depende de ese mecanismo.
+3. [`scripts/agents/apply_edits.py`](scripts/agents/apply_edits.py) (documentador y revisor de bugs) y [`scripts/agents/parse_mr_response.py`](scripts/agents/parse_mr_response.py) (revisor de MR) extraen el JSON de la respuesta cruda del modelo tolerando que venga envuelto en ` ```json ` o con texto alrededor; si no encuentran nada parseable, degradan de forma segura (`action: none` / `classification: human_review`) en vez de fallar el workflow.
+4. Para el documentador y el revisor de bugs, `apply_edits.py` además valida la acción: solo aplica un "fix mecánico" si el archivo está en una lista blanca y cada reemplazo de texto propuesto aparece **exactamente una vez** en el archivo; si no, degrada automáticamente a abrir un issue en vez de arriesgar corromper un archivo. Esta es una limitación deliberada del diseño: sin GPU ni compilador en el runner, no hay forma de verificar que un parche a `kernels/`, `src/` o `include/` sea correcto, así que esos casos siempre terminan en issue o en "requiere intervención humana", nunca en un PR automático.
+5. El workflow ejecuta la acción resultante (`gh issue create`, `gh pr create`, o `gh pr comment`) con `gh`.
+
+| Agente | Workflow | Prompt | Frecuencia | Criterio mecánico (arregla solo) | Criterio humano (solo comenta/issue) |
+|---|---|---|---|---|---|
+| Documentador | [`agent-documentation.yml`](.github/workflows/agent-documentation.yml) | [`documentador.md`](scripts/agents/documentador.md) | Semanal (lunes) + al fusionar a `main` + manual | Entrada de CHANGELOG faltante — único archivo cuyo contenido completo recibe el modelo, como reemplazo de texto exacto en `CHANGELOG.md` | Enlaces rotos en `README.md` (el modelo solo recibe encabezados/enlaces, no el archivo completo), o explicar diseño/decisiones de arquitectura |
+| Revisor de bugs | [`agent-bug-review.yml`](.github/workflows/agent-bug-review.yml) | [`bug-reviewer.md`](scripts/agents/bug-reviewer.md) | Diaria (cron) + manual | Tolerancia de test desalineada del README — solo si el archivo está bajo `tests/` | Falta `CUDA_CHECK`, TODO sin issue, o cualquier cambio a física/API pública/lógica de kernels |
+| Revisor de MR | [`agent-mr-review.yml`](.github/workflows/agent-mr-review.yml) | [`mr-reviewer.md`](scripts/agents/mr-reviewer.md) | Al terminar el CI de cada PR (`workflow_run` sobre el workflow `CI`) | Solo docs/formato/tests en verde, vinculado a un issue | Cambia semántica física o firma pública sin issue, o CI en rojo |
+
+Reglas comunes a los tres agentes:
+
+- Nunca pushean directo a `main` (además, la protección de rama lo bloquearía igualmente).
+- El documentador y el revisor de bugs solo abren PRs mecánicos vía rama `agent/<slug>-<run_id>` + `gh pr create`, etiquetados `agent:auto-fix`; para hallazgos que requieren criterio, solo abren un issue con `Requiere intervención humana: <motivo>`.
+- El revisor de MR **nunca** ejecuta `gh pr merge`: solo comenta la clasificación del PR.
+- Cada ejecución reporta como máximo un hallazgo (un issue o un PR), muy por debajo del tope de 5 issues automáticos por semana sin revisión humana.
+- El documentador y el revisor de bugs además se limitan a **1 issue abierto propio a la vez** (label `agent`+`documentation` o `agent`+`bug` respectivamente): si ya hay uno pendiente de revisión humana, la siguiente corrida no crea otro aunque vuelva a encontrar (o alucinar) el mismo hallazgo. Evita que un falso positivo recurrente inunde el tablero de issues/PR duplicados — hay que cerrar el existente para que el agente pueda reportar algo nuevo.
+- El tag `@v1` de `actions/ai-inference` fija una versión concreta de la acción (Node 20, sin `max-completion-tokens` ni `responseFormat`); los inputs usados (`prompt`, `system-prompt-file`, `model`, `max-tokens`) son los que existen en esa versión exacta, verificados contra su `action.yml`.
+
+### Requisitos y límites conocidos
+
+- **Permisos del repo**: los tres workflows solo necesitan `permissions: models: read` (ya configurado en cada uno) y el `GITHUB_TOKEN` automático. Además, Settings → Actions → General → Workflow permissions debe tener marcado **"Allow GitHub Actions to create and approve pull requests"** — sin esto, el documentador y el revisor de bugs fallan en `gh pr create` con `GitHub Actions is not permitted to create or approve pull requests` cuando encuentran un fix mecánico (ya está habilitado en este repo).
+- **Límite de tokens del tier gratuito**: GitHub Models rechaza requests de más de 8000 tokens totales (prompt + system prompt + tokens de salida pedidos) para `openai/gpt-4o`. Por eso el contexto que arma cada workflow es deliberadamente acotado (resúmenes/diffstat en vez de diffs completos, encabezados de README en vez del archivo completo) y además se trunca con un tope de caracteres como respaldo antes de enviarlo.
+- Si `models: read` falla con un error de permisos, revisar Settings → Copilot → Model providers (o el equivalente a nivel de organización) para confirmar que el acceso a GitHub Models esté habilitado.
 
 ## Estructura de Archivos
 
