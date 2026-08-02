@@ -9,6 +9,8 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Added
 
+- Configuración de tres agentes en CI utilizando GitHub Models: documentador, revisor de bugs, y revisor de MR. Implementados con `actions/ai-inference` y validados mediante scripts en `scripts/agents`.
+
 - Kernels CUDA para `computeAccelerations`, variante básica y variante con memoria
   compartida (`computeAccelerationsKernelShared`), con tests de equivalencia CPU/GPU.
 - Imagen Docker base migrada a `nvidia/cuda` para compilar y ejecutar el simulador con GPU.
