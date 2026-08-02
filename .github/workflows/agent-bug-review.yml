@@ -3,15 +3,16 @@ name: Agent - Revisor de bugs
 # Corre diariamente sobre main (cron), ademas de poder dispararse
 # manualmente para dejar evidencia antes de la entrega.
 #
-# Motor: GitHub Models (actions/ai-inference), gratuito. El system prompt
-# vive en scripts/agents/bug-reviewer.md y pide JSON en texto plano (no se
-# usa el modo prompt-file/.prompt.yml: su sustitucion de plantillas
-# corrompe el YAML con contexto multilinea, ver historial de commits).
-# Decision de diseno: como este runner no compila CUDA ni corre tests con
-# GPU, el "open_fix_pr" automatico solo se permite sobre archivos bajo
-# tests/; cualquier otro hallazgo (incluyendo CUDA_CHECK faltante en
-# kernels/ o src/cuda/) se reporta como issue o como "requiere intervencion
-# humana", nunca como parche automatico.
+# Motor: Ollama local dentro del propio runner (ver agent-documentation.yml
+# para el detalle de por que se cambio de GitHub Models -- se retiro por
+# completo el 30 de julio de 2026). El system prompt vive en
+# scripts/agents/bug-reviewer.md.
+#
+# Decision de diseno (independiente del motor): como este runner no
+# compila CUDA ni corre tests con GPU, el "open_fix_pr" automatico solo se
+# permite sobre archivos bajo tests/; cualquier otro hallazgo (incluyendo
+# CUDA_CHECK faltante en kernels/ o src/cuda/) se reporta como issue o como
+# "requiere intervencion humana", nunca como parche automatico.
 on:
   schedule:
     - cron: "0 9 * * *" # Todos los dias 09:00 UTC
@@ -21,7 +22,12 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  models: read
+
+env:
+  # Recomendado por el profesor: mejor balance calidad/tamano para C++/CUDA.
+  # Si el job se cae por timeout en el runner gratuito (sin GPU), bajar a
+  # qwen2.5-coder:3b -- pierde algo de calidad pero corre mas rapido.
+  OLLAMA_MODEL: "qwen2.5-coder:7b-instruct-q4_K_M"
 
 jobs:
   bug-review-agent:
@@ -39,59 +45,58 @@ jobs:
           git config user.name "bug-review-agent[bot]"
           git config user.email "bug-review-agent@users.noreply.github.com"
 
+      - name: Cache de modelos de Ollama
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ollama-models-${{ runner.os }}-${{ env.OLLAMA_MODEL }}
+
+      - name: Instalar Ollama
+        run: |
+          if ! command -v ollama >/dev/null 2>&1; then
+            curl -fsSL https://ollama.com/install.sh | sh
+          fi
+          ollama --version
+
       - name: Reunir contexto
         id: gather
         run: |
           set -euo pipefail
           BASE=$(git rev-parse HEAD~3 2>/dev/null || git rev-list --max-parents=0 HEAD)
-          CONTEXT=$(
-            {
-              echo "## Ultimos 10 commits"
-              git log --oneline -10
-
-              echo
-              echo "## Resumen de cambios (diffstat, no el diff completo) desde $BASE sobre kernels/, src/, include/, tests/"
-              git diff --stat "$BASE"..HEAD -- kernels/ src/ include/ tests/ || true
-
-              echo
-              echo "## Archivos con llamadas CUDA sin CUDA_CHECK en el mismo archivo (heuristica con grep, puede tener falsos positivos)"
-              for f in $(grep -rlE 'cudaMalloc|cudaMemcpy|cudaFree|<<<' kernels/ src/cuda 2>/dev/null || true); do
-                if ! grep -q "CUDA_CHECK" "$f"; then
-                  echo "- $f"
-                fi
-              done
-
-              echo
-              echo "## Tolerancias rtol/atol mencionadas en tests/"
-              grep -rn "rtol\|atol" tests/ || echo "(sin menciones)"
-
-              echo
-              echo "## Tolerancias rtol/atol documentadas en README.md"
-              grep -n "rtol\|atol" README.md || echo "(sin menciones)"
-            }
-          )
-          # GitHub Models limita el request completo (prompt + system prompt +
-          # tokens pedidos) a 8000 tokens en el tier gratuito. Se trunca el
-          # contexto por seguridad ademas de haber recortado su contenido arriba.
-          MAX_CHARS=6000
-          if [ "${#CONTEXT}" -gt "$MAX_CHARS" ]; then
-            CONTEXT="${CONTEXT:0:$MAX_CHARS}"$'\n[... contexto truncado por limite de tokens del modelo gratuito ...]'
-          fi
           {
-            echo 'context<<AGENT_CONTEXT_EOF'
-            printf '%s\n' "$CONTEXT"
-            echo 'AGENT_CONTEXT_EOF'
-          } >> "$GITHUB_OUTPUT"
+            echo "## Ultimos 10 commits"
+            git log --oneline -10
+
+            echo
+            echo "## Resumen de cambios (diffstat, no el diff completo) desde $BASE sobre kernels/, src/, include/, tests/"
+            git diff --stat "$BASE"..HEAD -- kernels/ src/ include/ tests/ || true
+
+            echo
+            echo "## Archivos con llamadas CUDA sin CUDA_CHECK en el mismo archivo (heuristica con grep, puede tener falsos positivos)"
+            for f in $(grep -rlE 'cudaMalloc|cudaMemcpy|cudaFree|<<<' kernels/ src/cuda 2>/dev/null || true); do
+              if ! grep -q "CUDA_CHECK" "$f"; then
+                echo "- $f"
+              fi
+            done
+
+            echo
+            echo "## Tolerancias rtol/atol mencionadas en tests/"
+            grep -rn "rtol\|atol" tests/ || echo "(sin menciones)"
+
+            echo
+            echo "## Tolerancias rtol/atol documentadas en README.md"
+            grep -n "rtol\|atol" README.md || echo "(sin menciones)"
+          } > "$RUNNER_TEMP/context.txt"
 
       - name: Ejecutar agente revisor de bugs
         id: inference
-        uses: actions/ai-inference@v1
-        with:
-          system-prompt-file: scripts/agents/bug-reviewer.md
-          prompt: |
-            ${{ steps.gather.outputs.context }}
-          model: openai/gpt-4o
-          max-tokens: "1200"
+        timeout-minutes: 35
+        run: |
+          bash scripts/agents/run_ollama.sh \
+            scripts/agents/bug-reviewer.md \
+            "$RUNNER_TEMP/context.txt" \
+            "$RUNNER_TEMP/response.txt"
+          echo "response-file=$RUNNER_TEMP/response.txt" >> "$GITHUB_OUTPUT"
 
       - name: Aplicar clasificacion
         id: apply
