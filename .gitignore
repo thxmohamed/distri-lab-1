@@ -10,10 +10,12 @@
 /lab1_distri
 /run_unit
 /run_integration
+/run_benchmark_gpu
 
 # Benchmark / analysis outputs
 *.dat
 *.png
+*.log
 output/
 
 # Excepción: resultados del cluster

@@ -26,7 +26,8 @@ int main(int argc, char** argv) {
             // =====================================================
             // 1) Benchmark de simulacion completa
             // =====================================================
-            std::ofstream sim_out("benchmark_results.dat");
+            std::ofstream sim_out("benchmark_results_lab1.dat");
+            sim_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
             sim_out << "# threads mean stddev speedup speedup_error efficiency efficiency_error\n";
 
             double T1_sim = 0.0;
@@ -71,6 +72,7 @@ int main(int argc, char** argv) {
             // 2) Benchmark solo de aceleraciones
             // =====================================================
             std::ofstream acc_out("accelerations_results.dat");
+            acc_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
             acc_out << "# threads mean stddev speedup speedup_error efficiency efficiency_error\n";
 
             int schedule_type = 0; // 0=static
@@ -80,6 +82,7 @@ int main(int argc, char** argv) {
             double sigma_T1_acc = 0.0;
 
             std::vector<double> acc_speedups;
+            std::vector<double> acc_sigma_speedups;
 
             for (int threads : threads_list) {
                 omp_set_num_threads(threads);
@@ -102,6 +105,7 @@ int main(int argc, char** argv) {
                 double sigmaEp = Benchmark::efficiencyError(sigmaSp, threads);
 
                 acc_speedups.push_back(Sp);
+                acc_sigma_speedups.push_back(sigmaSp);
 
                 acc_out << threads << " "
                         << result.mean << " "
@@ -125,6 +129,7 @@ int main(int argc, char** argv) {
             // schedule_type: 0=static, 1=dynamic, 2=guided
             // =====================================================
             std::ofstream sched_out("schedule_results.dat");
+            sched_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
             sched_out << "# schedule_type chunk threads mean stddev\n";
 
             int fixed_threads = 8;
@@ -155,19 +160,22 @@ int main(int argc, char** argv) {
             // 4) Analisis de Amdahl
             // =====================================================
             std::ofstream amdahl_out("scaling_analysis.dat");
-            amdahl_out << "# threads measured_speedup estimated_f amdahl_prediction\n";
+            amdahl_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
+            amdahl_out << "# threads measured_speedup measured_speedup_error estimated_f amdahl_prediction\n";
 
-            double S_last = acc_speedups.back();
-            int p_last = threads_list.back();
-            double f_est = Benchmark::amdahlSerialFraction(S_last, p_last);
+            // Ajusta f con todos los puntos medidos (no solo el de mayor p),
+            // ver Benchmark::amdahlSerialFractionFit.
+            double f_est = Benchmark::amdahlSerialFractionFit(threads_list, acc_speedups);
 
             for (size_t i = 0; i < threads_list.size(); i++) {
                 int p = threads_list[i];
                 double measured = acc_speedups[i];
+                double measuredError = acc_sigma_speedups[i];
                 double predicted = Benchmark::amdahlSpeedup(f_est, p);
 
                 amdahl_out << p << " "
                            << measured << " "
+                           << measuredError << " "
                            << f_est << " "
                            << predicted << "\n";
             }
@@ -179,6 +187,7 @@ int main(int argc, char** argv) {
             // variant: 0=atomic, 1=critical, 2=reduce
             // =====================================================
             std::ofstream sync_out("sync_results.dat");
+            sync_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
             sync_out << "# variant mean stddev\n";
 
             for (int variant = 0; variant < 3; variant++) {
@@ -203,6 +212,7 @@ int main(int argc, char** argv) {
             // variant: 0=private, 1=firstprivate, 2=lastprivate
             // =====================================================
             std::ofstream data_out("data_clauses_results.dat");
+            data_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
             data_out << "# variant mean stddev\n";
 
             for (int variant = 0; variant < 3; variant++) {
@@ -227,6 +237,7 @@ int main(int argc, char** argv) {
             // variant: 0=barrier, 1=nowait, 2=task+single, 3=parallel for
             // =====================================================
             std::ofstream adv_out("advanced_sync_results.dat");
+            adv_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
             adv_out << "# variant mean stddev\n";
 
             for (int variant = 0; variant < 4; variant++) {
@@ -247,7 +258,7 @@ int main(int argc, char** argv) {
             adv_out.close();
 
             std::cout << "\nArchivos generados:\n";
-            std::cout << " - benchmark_results.dat\n";
+            std::cout << " - benchmark_results_lab1.dat\n";
             std::cout << " - accelerations_results.dat\n";
             std::cout << " - schedule_results.dat\n";
             std::cout << " - scaling_analysis.dat\n";
@@ -264,7 +275,7 @@ int main(int argc, char** argv) {
             const double dt    = 0.001;
 
             NBodySystem sys(1.0, 0.05);
-            sys.initBinary(N, 42);
+            sys.initBinary(N, Benchmark::kSimulationSeed);
 
             NBodySimulator sim(&sys, dt);
             Visualizer viz("energy_timeseries.dat", "snapshots.dat", "global_metrics.dat");

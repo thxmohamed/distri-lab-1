@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-sim = np.loadtxt('benchmark_results.dat')
+sim = np.loadtxt('benchmark_results_lab1.dat')
 acc = np.loadtxt('accelerations_results.dat')
 
 threads_sim  = sim[:, 0]
