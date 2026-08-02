@@ -75,8 +75,11 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 - `plot_gpu_amdahl.py` ajustaba una curva de Amdahl(p) usando N como sustituto de p, lo cual es
   inválido (N es tamaño de problema, no recursos paralelos), y calculaba fN sin incluir el trabajo
   de Euler en host. Se reemplaza por el límite teórico Smax = 1/fN derivado del overhead end-to-end
-  real medido por N, dejando explícito que no es
-  un barrido clásico de p.
+  real medido por N, dejando explícito que no es un barrido clásico de p.
+- `fN` no estaba protegido contra ruido estadístico: si `kernel_mean` superaba levemente a
+  `endtoend_mean` por variabilidad entre repeticiones, podía dar división por cero o Smax
+  negativo. Se agrega `np.clip(fN, eps, 1.0)`. El gráfico de Amdahl GPU ahora también incluye
+  el speedup medido (`benchmark_results.dat`) junto al límite teórico Smax.
 
 ## [1.0.0-lab1] - 2026-05-11
 
