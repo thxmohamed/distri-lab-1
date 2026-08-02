@@ -12,6 +12,13 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 - Kernels CUDA para `computeAccelerations`, variante básica y variante con memoria
   compartida (`computeAccelerationsKernelShared`), con tests de equivalencia CPU/GPU.
 - Imagen Docker base migrada a `nvidia/cuda` para compilar y ejecutar el simulador con GPU.
+- `Benchmark::benchmarkKernelOnly`, `Benchmark::benchmarkEndToEnd` y `Benchmark::compareCpuGpu`
+  (`benchmarks/BenchmarkGpu.cu`) para medir el cálculo de aceleraciones en GPU sin y con
+  transferencias host/device, y compararlo contra la ruta CPU para el mismo N.
+- `make benchmark-gpu`: compila y corre `benchmarks/benchmark_gpu_main.cu`, el driver que
+  recorre la matriz N x variante x blockDim.x del Lab 2 y genera
+  `benchmark_results.dat`, `blockdim_study.dat` y `cluster_run.log` (con `nvidia-smi` y
+  `nvcc --version`). Pensado para correr una sola vez en el clúster DIINF, no en CI.
 - `CudaBuffer<T>` (RAII) para `cudaMalloc`/`cudaMemcpy`/`cudaFree` y `NBodyDeviceState` con
   layout SoA en device (masas, posiciones, velocidades, aceleraciones).
 - Integración de Euler en host (`stepEulerGpu`) usando aceleraciones calculadas en GPU, y
@@ -30,11 +37,25 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 - CI: reconstruye la imagen Docker localmente cuando el PR modifica el `Dockerfile`, en vez
   de depender siempre de la imagen publicada en GHCR.
+- El `.dat` de benchmark de la simulación completa CPU (Lab 1) se renombra de
+  `benchmark_results.dat` a `benchmark_results_lab1.dat`, para no chocar con el
+  `benchmark_results.dat` de la matriz de benchmarks GPU del Lab 2 (esquema de columnas
+  distinto: N/variante/blockDim.x en vez de hilos).
 
 ### Fixed
 
 - CI: se usa `git diff` de dos puntos contra la rama base del PR para evitar el error
   "no merge base" al comparar historiales.
+- Benchmark: `Benchmark::amdahlSerialFractionFit` reemplaza la estimación de la fracción
+  serial `f` basada en un único punto (el último de la lista de hilos) por un ajuste que
+  usa todos los puntos medidos (hilos, speedup), corrigiendo la sensibilidad al ruido en
+  mediciones con p elevado (observación de corrección del Lab 1).
+- `scaling_analysis.dat` ahora incluye el error propagado del speedup medido por punto, y
+  `plot_amdahl.py` grafica barras de error usando ese valor (antes se calculaba el error
+  pero se descartaba antes de llegar al gráfico; observación de corrección del Lab 1).
+- Se documenta la semilla fija usada en los experimentos de benchmark (`Benchmark::kSimulationSeed`),
+  antes hardcodeada sin registro; ahora se escribe como cabecera en los `.dat` generados
+  (observación de corrección del Lab 1).
 
 ## [1.0.0-lab1] - 2026-05-11
 

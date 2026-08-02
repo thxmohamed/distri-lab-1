@@ -72,7 +72,7 @@ Result Benchmark::measureSimulation(int N, int steps, int repetitions) {
         // Se reconstruye el sistema en cada repetición para que todas las
         // mediciones partan desde la misma condición inicial.
         NBodySystem system(1.0, 0.05);
-        system.initDisk(N, 1.0, 42);
+        system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
 
         NBodySimulator sim(&system, 0.01);
 
@@ -113,7 +113,7 @@ Result Benchmark::measureAccelerationsOnly(int N, int steps, int repetitions,
     for (int r = 0; r < repetitions; r++) {
         // Se reinicia el sistema para mantener reproducibilidad entre repeticiones.
         NBodySystem system(1.0, 0.05);
-        system.initDisk(N, 1.0, 42);
+        system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
 
         double start = omp_get_wtime();
 
@@ -227,6 +227,42 @@ double Benchmark::amdahlSerialFraction(double Sp, int p) {
 }
 
 /**
+ * Función: Benchmark::amdahlSerialFractionFit
+ * Entrada:
+ *  - threads: hilos usados en cada punto medido.
+ *  - speedups: speedup medido para cada punto (mismo orden que threads).
+ * Salida:
+ *  - Fracción serial estimada f, acotada entre 0 y 1.
+ * Descripción:
+ *  Linealiza la Ley de Amdahl (1/Sp = f*(1 - 1/p) + 1/p) y ajusta f por
+ *  mínimos cuadrados usando todos los puntos, en vez de invertir la fórmula
+ *  con un único (Sp, p). Esto evita que la estimación dependa solo del
+ *  punto con mayor p, que es el más sensible al ruido de las mediciones.
+ */
+// u_i = 1 - 1/p_i, v_i = 1/Sp_i - 1/p_i  =>  v_i = f * u_i (recta por el origen)
+// f = sum(u_i * v_i) / sum(u_i^2)
+double Benchmark::amdahlSerialFractionFit(const std::vector<int>& threads,
+                                          const std::vector<double>& speedups) {
+    double num = 0.0;
+    double den = 0.0;
+
+    for (size_t i = 0; i < threads.size(); i++) {
+        double invP = 1.0 / threads[i];
+        double u = 1.0 - invP;
+        double v = 1.0 / speedups[i] - invP;
+
+        num += u * v;
+        den += u * u;
+    }
+
+    if (den == 0.0) {
+        return 0.0;
+    }
+
+    return std::clamp(num / den, 0.0, 1.0);
+}
+
+/**
  * Función: Benchmark::amdahlSpeedup
  * Entrada:
  *  - f: fracción serial estimada.
@@ -259,7 +295,7 @@ Result Benchmark::measureSyncVariant(int N, int steps, int reps, int variant) {
 
     for (int r = 0; r < reps; r++) {
         NBodySystem system(1.0, 0.05);
-        system.initDisk(N, 1.0, 42);
+        system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
 
         NBodySimulator sim(&system, 0.01);
 
@@ -300,7 +336,7 @@ Result Benchmark::measureDataVariant(int N, int reps, int variant) {
 
     for (int r = 0; r < reps; r++) {
         NBodySystem system(1.0, 0.05);
-        system.initDisk(N, 1.0, 42);
+        system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
 
         NBodySimulator sim(&system, 0.01);
 
@@ -342,7 +378,7 @@ Result Benchmark::measureAdvancedSyncVariant(int N, int steps, int reps, int var
 
     for (int r = 0; r < reps; r++) {
         NBodySystem system(1.0, 0.05);
-        system.initDisk(N, 1.0, 42);
+        system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
 
         NBodySimulator sim(&system, 0.01);
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "NBodySimulator.h"
 #include "NBodySystem.h"
 
@@ -29,8 +31,25 @@ struct Result {
     double stddev; // Desviación estándar muestral de los tiempos medidos.
 };
 
+/**
+ * Estructura: CpuGpuComparison
+ * ----------------------------
+ * Resultado de comparar el mismo cálculo en CPU (OpenMP) y GPU (CUDA):
+ * tiempos de ambos y el speedup GPU vs CPU con su error propagado.
+ */
+struct CpuGpuComparison {
+    Result cpu;
+    Result gpu;
+    double speedup;
+    double speedupError;
+};
+
 class Benchmark {
 public:
+    // Semilla fija usada en todos los experimentos de benchmark, para que las
+    // corridas sean reproducibles y quede documentada en los .dat generados.
+    static constexpr int kSimulationSeed = 42;
+
     //Mide el tiempo de la simulación completa para N cuerpos y steps pasos.
     static Result measureSimulation(int N, int steps, int repetitions);
     //Mide únicamente el cálculo de aceleraciones, variando schedule y chunk.
@@ -51,6 +70,13 @@ public:
 
     // Estima la fracción serial f a partir de un speedup medido Sp y la Ley de Amdahl.
     static double amdahlSerialFraction(double Sp, int p);
+    /**
+     * Estima la fracción serial f ajustando la Ley de Amdahl con todos los
+     * puntos (hilos, speedup) medidos, en vez de un único punto. Evita que
+     * el ajuste dependa solo del punto con mayor p (más sensible al ruido).
+     */
+    static double amdahlSerialFractionFit(const std::vector<int>& threads,
+                                          const std::vector<double>& speedups);
     // Calcula el speedup teórico según la Ley de Amdahl para una fracción serial f y p hilos.
     static double amdahlSpeedup(double f, int p);
 
@@ -69,4 +95,34 @@ public:
      * variant = 0 barrier, 1 nowait, 2 task + single, 3 parallel for.
      */
     static Result measureAdvancedSyncVariant(int N, int steps, int reps, int variant);
+
+    // ----------------------------------------------------------------
+    // Benchmarks GPU / CUDA (implementados en benchmarks/BenchmarkGpu.cu)
+    // ----------------------------------------------------------------
+
+    /**
+     * Mide solo el cálculo de aceleraciones en GPU (kernel + sincronización),
+     * sin incluir transferencias host/device: el estado se sube una vez antes
+     * de cronometrar y se descarga después.
+     * @param variant 0 = básico, 1 = shared memory
+     */
+    static Result benchmarkKernelOnly(int N, int variant, int block_size,
+                                      int steps, int repetitions);
+
+    /**
+     * Mide el cálculo de aceleraciones en GPU de extremo a extremo, incluyendo
+     * las transferencias host/device de cada llamada (subida de estado,
+     * ejecución del kernel, sincronización y descarga de resultados).
+     * @param variant 0 = básico, 1 = shared memory
+     */
+    static Result benchmarkEndToEnd(int N, int variant, int block_size,
+                                    int steps, int repetitions);
+
+    /**
+     * Compara el mismo cálculo de aceleraciones en CPU (paralelo, referencia
+     * static/chunk=32) contra GPU end-to-end, para el mismo N.
+     * @param variant 0 = básico, 1 = shared memory (usado en la ruta GPU)
+     */
+    static CpuGpuComparison compareCpuGpu(int N, int variant, int block_size,
+                                          int steps, int repetitions);
 };

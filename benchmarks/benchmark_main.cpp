@@ -12,7 +12,7 @@
  * Descripción:
  * Ejecuta benchmarks de escalabilidad para la simulación N-cuerpos,
  * variando el número de hilos OpenMP y registrando los resultados
- * en el archivo benchmark_results.dat.
+ * en el archivo benchmark_results_lab1.dat.
  */
 int main() {
     // Cantidad de cuerpos usados en la simulación.
@@ -25,7 +25,7 @@ int main() {
     int reps = 10;
 
     // Archivo de salida donde se guardan los resultados del benchmark.
-    std::ofstream out("benchmark_results.dat");
+    std::ofstream out("benchmark_results_lab1.dat");
 
     // Cabecera del archivo .dat:
     // threads  -> número de hilos usados
@@ -45,7 +45,7 @@ int main() {
      *  1. Se fija el número de hilos OpenMP.
      *  2. Se ejecuta el benchmark con varias repeticiones.
      *  3. Se calcula speedup y eficiencia.
-     *  4. Se guarda el resultado en benchmark_results.dat.
+     *  4. Se guarda el resultado en benchmark_results_lab1.dat.
      */
     for (int threads : {1, 2, 4, 8}) {
         // Configura la cantidad de hilos que usará OpenMP.
