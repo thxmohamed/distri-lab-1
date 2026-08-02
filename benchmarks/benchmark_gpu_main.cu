@@ -1,6 +1,8 @@
 #include "Benchmark.h"
 #include "NBodySystem.h"
 
+#include <cuda_runtime.h>
+
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -10,11 +12,14 @@
 /**
  * Driver de la matriz de benchmarks GPU del Lab 2.
  *
- * Recorre N x variante x blockDim.x, midiendo tiempo de kernel-only y con
- * transferencias (blockdim_study.dat), y compara un paso de simulación GPU
- * completo contra CPU serial para el mismo N (benchmark_results.dat).
- * Pensado para correr UNA sola vez en el clúster DIINF: cada combinación
- * implica kRepetitions * kSteps llamadas al kernel.
+ * Recorre N x variante x blockDim.x, midiendo tiempo de kernel-only, con
+ * transferencias (sin Euler) y end-to-end real (paso de simulación completo)
+ * para las 40 combinaciones (blockdim_study.dat), y compara un paso de
+ * simulación completo GPU contra CPU serial para el mismo N
+ * (benchmark_results.dat). Hace un warm-up antes de medir para que la
+ * inicialización del contexto CUDA no contamine el primer punto. Pensado
+ * para correr UNA sola vez en el clúster DIINF: cada combinación implica
+ * kRepetitions * kSteps llamadas al kernel.
  *
  * No forma parte del binario principal (lab1_distri, compilado con g++):
  * se compila aparte con nvcc via `make benchmark-gpu`, porque enlaza
@@ -60,13 +65,25 @@ int main() {
     appendCommandOutput("nvidia-smi", "nvidia-smi");
     appendCommandOutput("nvcc --version", "nvcc --version");
 
+    // Warm-up: absorbe la inicializacion del contexto CUDA y la compilacion
+    // JIT del kernel antes de que empiece a correr cualquier medicion, para
+    // que ese costo fijo no contamine el primer punto de la matriz.
+    {
+        NBodySystem warmupSystem(1.0, 0.05);
+        warmupSystem.initDisk(32, 1.0, Benchmark::kSimulationSeed);
+        warmupSystem.computeAccelerationsGpu(0, 64);
+        cudaDeviceSynchronize();
+    }
+
     // =====================================================
-    // 1) Estudio blockDim.x: N x variante x blockDim -> kernel-only y
-    //    aceleraciones con transferencias (sin integrar Euler)
+    // 1) Estudio blockDim.x: N x variante x blockDim -> kernel-only, con
+    //    transferencias (sin integrar Euler) y end-to-end real (paso
+    //    completo de simulacion)
     // =====================================================
     std::ofstream blockdim_out("blockdim_study.dat");
     blockdim_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
-    blockdim_out << "# N variant block_size kernel_mean kernel_stddev transfers_mean transfers_stddev\n";
+    blockdim_out << "# N variant block_size kernel_mean kernel_stddev "
+                    "transfers_mean transfers_stddev endtoend_mean endtoend_stddev\n";
 
     for (int N : kBodyCounts) {
         for (int variant : kVariants) {
@@ -77,15 +94,20 @@ int main() {
                 Result withTransfers = Benchmark::benchmarkAccelerationsWithTransfers(
                     N, variant, blockSize, kSteps, kRepetitions
                 );
+                Result endToEnd = Benchmark::benchmarkEndToEnd(
+                    N, variant, blockSize, kSteps, kRepetitions
+                );
 
                 blockdim_out << N << " " << variant << " " << blockSize << " "
                              << kernelOnly.mean << " " << kernelOnly.stddev << " "
-                             << withTransfers.mean << " " << withTransfers.stddev << "\n";
+                             << withTransfers.mean << " " << withTransfers.stddev << " "
+                             << endToEnd.mean << " " << endToEnd.stddev << "\n";
 
                 std::cout << "[blockdim] N=" << N << " variant=" << variant
                           << " block=" << blockSize
                           << " | kernel-only: " << kernelOnly.mean << "s"
                           << " | con transferencias: " << withTransfers.mean << "s"
+                          << " | end-to-end: " << endToEnd.mean << "s"
                           << std::endl;
             }
         }

@@ -129,14 +129,16 @@ public:
                                     int steps, int repetitions);
 
     /**
-     * Mide únicamente el cálculo de aceleraciones en CPU serial (referencia
-     * de correctitud del Lab 1, computeAccelerationsSerial), sin OpenMP.
+     * Mide un paso de simulación completo en CPU serial (integrateEuler con
+     * use_parallel_accel_=false, la ruta serial del Lab 1: aceleraciones +
+     * kick + drift), sin OpenMP. Comparable con benchmarkEndToEnd (GPU).
      */
-    static Result measureAccelerationsSerial(int N, int steps, int repetitions);
+    static Result benchmarkEndToEndSerial(int N, int steps, int repetitions);
 
     /**
      * Compara un paso de simulación completo en GPU (benchmarkEndToEnd)
-     * contra la ruta CPU serial (measureAccelerationsSerial), para el mismo N.
+     * contra un paso de simulación completo en CPU serial (benchmarkEndToEndSerial),
+     * para el mismo N.
      * @param variant 0 = básico, 1 = shared memory (usado en la ruta GPU)
      */
     static CpuGpuComparison compareCpuGpu(int N, int variant, int block_size,

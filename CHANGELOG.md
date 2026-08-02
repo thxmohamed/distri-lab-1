@@ -13,10 +13,10 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
   compartida (`computeAccelerationsKernelShared`), con tests de equivalencia CPU/GPU.
 - Imagen Docker base migrada a `nvidia/cuda` para compilar y ejecutar el simulador con GPU.
 - `Benchmark::benchmarkKernelOnly`, `Benchmark::benchmarkAccelerationsWithTransfers`,
-  `Benchmark::benchmarkEndToEnd`, `Benchmark::measureAccelerationsSerial` y
+  `Benchmark::benchmarkEndToEnd`, `Benchmark::benchmarkEndToEndSerial` y
   `Benchmark::compareCpuGpu` (`benchmarks/BenchmarkGpu.cu`) para medir el cálculo de
-  aceleraciones en GPU sin y con transferencias host/device, un paso de simulación GPU
-  completo, y compararlo contra la referencia CPU serial para el mismo N.
+  aceleraciones en GPU sin y con transferencias host/device, un paso de simulación completo
+  (GPU y CPU serial), y compararlos entre sí para el mismo N.
 - `make benchmark-gpu`: compila y corre `benchmarks/benchmark_gpu_main.cu`, el driver que
   recorre la matriz N x variante x blockDim.x del Lab 2 y genera
   `benchmark_results.dat`, `blockdim_study.dat` y `cluster_run.log` (con `nvidia-smi` y
@@ -62,12 +62,20 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
   no avanzaban entre las "steps" repetidas); ahora mide un paso de simulación completo
   (`NBodySimulator::stepEulerGpu`). La medición anterior se conserva como
   `Benchmark::benchmarkAccelerationsWithTransfers`, usada en el estudio de blockDim.x.
-- Benchmark GPU: `compareCpuGpu` comparaba contra CPU OpenMP (24 hilos) en vez de la referencia
-  serial exigida; ahora usa `Benchmark::measureAccelerationsSerial` (`computeAccelerationsSerial`
-  del Lab 1).
+- Benchmark GPU: `compareCpuGpu` comparaba un paso GPU completo contra CPU OpenMP (24 hilos)
+  y encima sin Euler del lado CPU (asimetría paso-completo vs. solo-aceleraciones); ahora usa
+  `Benchmark::benchmarkEndToEndSerial` (`NBodySimulator::integrateEuler()`, serial por defecto),
+  paso completo contra paso completo, misma semilla/dt/G/epsilon/steps en ambos lados.
+- `blockdim_study.dat` no incluía la medición end-to-end real (paso completo) para las 40
+  combinaciones N×variante×blockDim.x, solo para las 8 combinaciones de `benchmark_results.dat`;
+  ahora las 40 combinaciones incluyen kernel-only, con-transferencias y end-to-end real.
+- Se agrega un warm-up (una corrida chica de `computeAccelerationsGpu`) antes de empezar a medir,
+  para que la inicialización del contexto CUDA y la compilación JIT del kernel no contaminen el
+  primer punto de la matriz.
 - `plot_gpu_amdahl.py` ajustaba una curva de Amdahl(p) usando N como sustituto de p, lo cual es
-  inválido (N es tamaño de problema, no recursos paralelos). Se reemplaza por el límite teórico
-  Smax = 1/fN derivado del overhead de transferencias medido por N, dejando explícito que no es
+  inválido (N es tamaño de problema, no recursos paralelos), y calculaba fN sin incluir el trabajo
+  de Euler en host. Se reemplaza por el límite teórico Smax = 1/fN derivado del overhead end-to-end
+  real medido por N, dejando explícito que no es
   un barrido clásico de p.
 
 ## [1.0.0-lab1] - 2026-05-11

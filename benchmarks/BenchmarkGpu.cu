@@ -171,22 +171,26 @@ Result Benchmark::benchmarkEndToEnd(int N, int variant, int block_size,
 
 /**
  * ---------------------------------------------------------------
- * Benchmark::measureAccelerationsSerial
+ * Benchmark::benchmarkEndToEndSerial
  * ---------------------------------------------------------------
- * Referencia CPU serial (Lab 1): computeAccelerationsSerial(), sin OpenMP.
- * Es la referencia de correctitud/desempeño exigida para comparar contra GPU.
+ * Paso de simulación completo en CPU serial: NBodySimulator::integrateEuler()
+ * con use_parallel_accel_=false (valor por defecto del constructor), la
+ * misma ruta serial del Lab 1. Mismo orden de operaciones (aceleraciones +
+ * kick + drift) que benchmarkEndToEnd (GPU), para que la comparación sea
+ * pareja: paso completo contra paso completo.
  */
-Result Benchmark::measureAccelerationsSerial(int N, int steps, int repetitions) {
+Result Benchmark::benchmarkEndToEndSerial(int N, int steps, int repetitions) {
     std::vector<double> times;
 
     for (int r = 0; r < repetitions; r++) {
         NBodySystem system(1.0, 0.05);
         system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
+        NBodySimulator simulator(&system, 0.01);
 
         auto start = std::chrono::steady_clock::now();
 
         for (int s = 0; s < steps; s++) {
-            system.computeAccelerationsSerial();
+            simulator.integrateEuler();
         }
 
         auto end = std::chrono::steady_clock::now();
@@ -200,12 +204,13 @@ Result Benchmark::measureAccelerationsSerial(int N, int steps, int repetitions) 
  * ---------------------------------------------------------------
  * Benchmark::compareCpuGpu
  * ---------------------------------------------------------------
- * Referencia CPU: serial (measureAccelerationsSerial), sin OpenMP.
- * Referencia GPU: benchmarkEndToEnd, un paso de simulación completo.
+ * Referencia CPU: benchmarkEndToEndSerial, paso completo serial.
+ * Referencia GPU: benchmarkEndToEnd, paso completo GPU. Paso completo
+ * contra paso completo, misma semilla/dt/G/epsilon/steps.
  */
 CpuGpuComparison Benchmark::compareCpuGpu(int N, int variant, int block_size,
                                           int steps, int repetitions) {
-    Result cpu = Benchmark::measureAccelerationsSerial(N, steps, repetitions);
+    Result cpu = Benchmark::benchmarkEndToEndSerial(N, steps, repetitions);
     Result gpu = Benchmark::benchmarkEndToEnd(N, variant, block_size, steps, repetitions);
 
     double sp = Benchmark::speedup(cpu.mean, gpu.mean);
