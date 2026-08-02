@@ -12,9 +12,10 @@
 #include <vector>
 
 /**
- * Implementa los benchmarks GPU del simulador N-cuerpos: kernel-only
- * (sin transferencias), end-to-end (con transferencias) y comparación
- * directa contra la ruta CPU (OpenMP) para el mismo N.
+ * Implementa los benchmarks GPU del simulador N-cuerpos: kernel-only (sin
+ * transferencias), aceleraciones con transferencias (sin integrar Euler),
+ * un paso de simulación completo (end-to-end real), y comparación directa
+ * contra la referencia CPU serial para el mismo N.
  *
  * Temporización con std::chrono::steady_clock en host + cudaDeviceSynchronize()
  * antes de cerrar el cronómetro. No se usa cudaEvent_t.
@@ -108,14 +109,16 @@ Result Benchmark::benchmarkKernelOnly(int N, int variant, int block_size,
 
 /**
  * ---------------------------------------------------------------
- * Benchmark::benchmarkEndToEnd
+ * Benchmark::benchmarkAccelerationsWithTransfers
  * ---------------------------------------------------------------
  * Cronometra NBodySystem::computeAccelerationsGpu() directamente: esa
  * función ya sube el estado, ejecuta el kernel, sincroniza y descarga el
  * resultado en cada llamada, por lo que el tiempo incluye transferencias.
+ * No integra Euler: las posiciones no cambian entre llamadas. Sirve para
+ * aislar el costo de las transferencias frente a benchmarkKernelOnly.
  */
-Result Benchmark::benchmarkEndToEnd(int N, int variant, int block_size,
-                                    int steps, int repetitions) {
+Result Benchmark::benchmarkAccelerationsWithTransfers(int N, int variant, int block_size,
+                                                      int steps, int repetitions) {
     std::vector<double> times;
 
     for (int r = 0; r < repetitions; r++) {
@@ -137,15 +140,72 @@ Result Benchmark::benchmarkEndToEnd(int N, int variant, int block_size,
 
 /**
  * ---------------------------------------------------------------
+ * Benchmark::benchmarkEndToEnd
+ * ---------------------------------------------------------------
+ * Cronometra NBodySimulator::stepEulerGpu(): aceleraciones en GPU (con
+ * transferencias) + integración de Euler en host (kick + drift). A
+ * diferencia de benchmarkAccelerationsWithTransfers, el estado sí avanza
+ * entre llamadas, por lo que representa un paso de simulación real.
+ */
+Result Benchmark::benchmarkEndToEnd(int N, int variant, int block_size,
+                                    int steps, int repetitions) {
+    std::vector<double> times;
+
+    for (int r = 0; r < repetitions; r++) {
+        NBodySystem system(1.0, 0.05);
+        system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
+        NBodySimulator simulator(&system, 0.01);
+
+        auto start = std::chrono::steady_clock::now();
+
+        for (int s = 0; s < steps; s++) {
+            simulator.stepEulerGpu(variant, block_size);
+        }
+
+        auto end = std::chrono::steady_clock::now();
+        times.push_back(std::chrono::duration<double>(end - start).count());
+    }
+
+    return calculateStatsGpu(times);
+}
+
+/**
+ * ---------------------------------------------------------------
+ * Benchmark::measureAccelerationsSerial
+ * ---------------------------------------------------------------
+ * Referencia CPU serial (Lab 1): computeAccelerationsSerial(), sin OpenMP.
+ * Es la referencia de correctitud/desempeño exigida para comparar contra GPU.
+ */
+Result Benchmark::measureAccelerationsSerial(int N, int steps, int repetitions) {
+    std::vector<double> times;
+
+    for (int r = 0; r < repetitions; r++) {
+        NBodySystem system(1.0, 0.05);
+        system.initDisk(N, 1.0, Benchmark::kSimulationSeed);
+
+        auto start = std::chrono::steady_clock::now();
+
+        for (int s = 0; s < steps; s++) {
+            system.computeAccelerationsSerial();
+        }
+
+        auto end = std::chrono::steady_clock::now();
+        times.push_back(std::chrono::duration<double>(end - start).count());
+    }
+
+    return calculateStatsGpu(times);
+}
+
+/**
+ * ---------------------------------------------------------------
  * Benchmark::compareCpuGpu
  * ---------------------------------------------------------------
- * Referencia CPU: misma ruta paralela usada en el resto de los benchmarks
- * (static, chunk=32). Referencia GPU: benchmarkEndToEnd, para comparar
- * tiempos "reales" de uso (con transferencias) y no solo de cómputo.
+ * Referencia CPU: serial (measureAccelerationsSerial), sin OpenMP.
+ * Referencia GPU: benchmarkEndToEnd, un paso de simulación completo.
  */
 CpuGpuComparison Benchmark::compareCpuGpu(int N, int variant, int block_size,
                                           int steps, int repetitions) {
-    Result cpu = Benchmark::measureAccelerationsOnly(N, steps, repetitions, 0, 32);
+    Result cpu = Benchmark::measureAccelerationsSerial(N, steps, repetitions);
     Result gpu = Benchmark::benchmarkEndToEnd(N, variant, block_size, steps, repetitions);
 
     double sp = Benchmark::speedup(cpu.mean, gpu.mean);

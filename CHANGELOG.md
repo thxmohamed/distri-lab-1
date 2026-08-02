@@ -12,9 +12,11 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 - Kernels CUDA para `computeAccelerations`, variante básica y variante con memoria
   compartida (`computeAccelerationsKernelShared`), con tests de equivalencia CPU/GPU.
 - Imagen Docker base migrada a `nvidia/cuda` para compilar y ejecutar el simulador con GPU.
-- `Benchmark::benchmarkKernelOnly`, `Benchmark::benchmarkEndToEnd` y `Benchmark::compareCpuGpu`
-  (`benchmarks/BenchmarkGpu.cu`) para medir el cálculo de aceleraciones en GPU sin y con
-  transferencias host/device, y compararlo contra la ruta CPU para el mismo N.
+- `Benchmark::benchmarkKernelOnly`, `Benchmark::benchmarkAccelerationsWithTransfers`,
+  `Benchmark::benchmarkEndToEnd`, `Benchmark::measureAccelerationsSerial` y
+  `Benchmark::compareCpuGpu` (`benchmarks/BenchmarkGpu.cu`) para medir el cálculo de
+  aceleraciones en GPU sin y con transferencias host/device, un paso de simulación GPU
+  completo, y compararlo contra la referencia CPU serial para el mismo N.
 - `make benchmark-gpu`: compila y corre `benchmarks/benchmark_gpu_main.cu`, el driver que
   recorre la matriz N x variante x blockDim.x del Lab 2 y genera
   `benchmark_results.dat`, `blockdim_study.dat` y `cluster_run.log` (con `nvidia-smi` y
@@ -56,6 +58,17 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 - Se documenta la semilla fija usada en los experimentos de benchmark (`Benchmark::kSimulationSeed`),
   antes hardcodeada sin registro; ahora se escribe como cabecera en los `.dat` generados
   (observación de corrección del Lab 1).
+- Benchmark GPU: `benchmarkEndToEnd` medía solo aceleraciones con transferencias (las posiciones
+  no avanzaban entre las "steps" repetidas); ahora mide un paso de simulación completo
+  (`NBodySimulator::stepEulerGpu`). La medición anterior se conserva como
+  `Benchmark::benchmarkAccelerationsWithTransfers`, usada en el estudio de blockDim.x.
+- Benchmark GPU: `compareCpuGpu` comparaba contra CPU OpenMP (24 hilos) en vez de la referencia
+  serial exigida; ahora usa `Benchmark::measureAccelerationsSerial` (`computeAccelerationsSerial`
+  del Lab 1).
+- `plot_gpu_amdahl.py` ajustaba una curva de Amdahl(p) usando N como sustituto de p, lo cual es
+  inválido (N es tamaño de problema, no recursos paralelos). Se reemplaza por el límite teórico
+  Smax = 1/fN derivado del overhead de transferencias medido por N, dejando explícito que no es
+  un barrido clásico de p.
 
 ## [1.0.0-lab1] - 2026-05-11
 

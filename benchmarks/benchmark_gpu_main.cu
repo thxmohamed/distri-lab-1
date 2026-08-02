@@ -1,8 +1,6 @@
 #include "Benchmark.h"
 #include "NBodySystem.h"
 
-#include <omp.h>
-
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -12,10 +10,11 @@
 /**
  * Driver de la matriz de benchmarks GPU del Lab 2.
  *
- * Recorre N x variante x blockDim.x, midiendo tiempo de kernel-only y
- * end-to-end (blockdim_study.dat), y compara GPU contra CPU para el mismo N
- * (benchmark_results.dat). Pensado para correr UNA sola vez en el clúster
- * DIINF: cada combinación implica kRepetitions * kSteps llamadas al kernel.
+ * Recorre N x variante x blockDim.x, midiendo tiempo de kernel-only y con
+ * transferencias (blockdim_study.dat), y compara un paso de simulación GPU
+ * completo contra CPU serial para el mismo N (benchmark_results.dat).
+ * Pensado para correr UNA sola vez en el clúster DIINF: cada combinación
+ * implica kRepetitions * kSteps llamadas al kernel.
  *
  * No forma parte del binario principal (lab1_distri, compilado con g++):
  * se compila aparte con nvcc via `make benchmark-gpu`, porque enlaza
@@ -48,16 +47,13 @@ void appendCommandOutput(const std::string& label, const std::string& command) {
 } // namespace
 
 int main() {
-    const int cpuThreads = omp_get_max_threads();
-    omp_set_num_threads(cpuThreads);
-
     std::ofstream header("cluster_run.log", std::ios::trunc);
     header << "# Matriz de benchmarks GPU - Lab 2\n"
            << "# seed=" << Benchmark::kSimulationSeed << "\n"
            << "# N in {256,512,1024,2000}, variant in {0=basico,1=shared}, "
               "blockDim.x in {64,128,256,512,1024}\n"
            << "# steps=" << kSteps << " repetitions=" << kRepetitions
-           << " cpu_threads=" << cpuThreads << "\n";
+           << " cpu_reference=serial\n";
     header.close();
 
     appendCommandOutput("hostname", "hostname");
@@ -65,11 +61,12 @@ int main() {
     appendCommandOutput("nvcc --version", "nvcc --version");
 
     // =====================================================
-    // 1) Estudio blockDim.x: N x variante x blockDim -> kernel-only y end-to-end
+    // 1) Estudio blockDim.x: N x variante x blockDim -> kernel-only y
+    //    aceleraciones con transferencias (sin integrar Euler)
     // =====================================================
     std::ofstream blockdim_out("blockdim_study.dat");
     blockdim_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
-    blockdim_out << "# N variant block_size kernel_mean kernel_stddev endtoend_mean endtoend_stddev\n";
+    blockdim_out << "# N variant block_size kernel_mean kernel_stddev transfers_mean transfers_stddev\n";
 
     for (int N : kBodyCounts) {
         for (int variant : kVariants) {
@@ -77,18 +74,18 @@ int main() {
                 Result kernelOnly = Benchmark::benchmarkKernelOnly(
                     N, variant, blockSize, kSteps, kRepetitions
                 );
-                Result endToEnd = Benchmark::benchmarkEndToEnd(
+                Result withTransfers = Benchmark::benchmarkAccelerationsWithTransfers(
                     N, variant, blockSize, kSteps, kRepetitions
                 );
 
                 blockdim_out << N << " " << variant << " " << blockSize << " "
                              << kernelOnly.mean << " " << kernelOnly.stddev << " "
-                             << endToEnd.mean << " " << endToEnd.stddev << "\n";
+                             << withTransfers.mean << " " << withTransfers.stddev << "\n";
 
                 std::cout << "[blockdim] N=" << N << " variant=" << variant
                           << " block=" << blockSize
                           << " | kernel-only: " << kernelOnly.mean << "s"
-                          << " | end-to-end: " << endToEnd.mean << "s"
+                          << " | con transferencias: " << withTransfers.mean << "s"
                           << std::endl;
             }
         }
@@ -97,11 +94,12 @@ int main() {
     blockdim_out.close();
 
     // =====================================================
-    // 2) Speedup GPU vs CPU vs N (block size por defecto, ambas variantes)
+    // 2) Speedup GPU (paso Euler completo) vs CPU serial, vs N
+    //    (block size por defecto, ambas variantes)
     // =====================================================
     std::ofstream results_out("benchmark_results.dat");
     results_out << "# seed=" << Benchmark::kSimulationSeed << "\n";
-    results_out << "# cpu_threads=" << cpuThreads << "\n";
+    results_out << "# cpu_reference=serial\n";
     results_out << "# N variant block_size cpu_mean cpu_stddev gpu_mean gpu_stddev speedup speedup_error\n";
 
     for (int N : kBodyCounts) {

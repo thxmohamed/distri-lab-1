@@ -253,20 +253,24 @@ Los experimentos utilizan los siguientes parámetros por defecto:
 `make benchmark-gpu` recorre la matriz obligatoria N∈{256,512,1024,2000} × variante{básica,shared}
 × blockDim.x∈{64,128,256,512,1024}, con ≥100 pasos y ≥10 repeticiones por punto, y genera:
 
-- `benchmark_results.dat` — CPU (OpenMP) vs. GPU end-to-end y speedup, para cada N y variante, a
-  blockDim.x=256 (por defecto)
-- `blockdim_study.dat` — tiempo kernel-only y end-to-end para cada combinación N/variante/blockDim.x
-- `cluster_run.log` — `nvidia-smi`, `nvcc --version` y semilla usada, para documentar el entorno
+- `benchmark_results.dat` — CPU serial vs. GPU (paso de simulación completo, `stepEulerGpu`) y
+  speedup, para cada N y variante, a blockDim.x=256 (por defecto)
+- `blockdim_study.dat` — tiempo kernel-only y con transferencias (sin integrar Euler) para cada
+  combinación N/variante/blockDim.x
+- `cluster_run.log` — `hostname`, `nvidia-smi`, `nvcc --version` y semilla usada, para documentar
+  el entorno
 
 Pensado para correrse en el clúster DIINF — las mediciones finales de
 rendimiento solo valen si salen de ahi, no de una corrida en CI.
 
 `make plots-gpu` genera en `output/`:
 
-- `gpu_speedup_vs_n.png` — speedup GPU vs. CPU vs. N, ambas variantes
-- `gpu_transfer_impact.png` — tiempo kernel-only vs. end-to-end vs. N, por variante
+- `gpu_speedup_vs_n.png` — speedup GPU (paso completo) vs. CPU serial vs. N, ambas variantes
+- `gpu_transfer_impact.png` — tiempo kernel-only vs. con transferencias vs. N, por variante
 - `gpu_blockdim_study.png` — tiempo kernel-only vs. blockDim.x a N=2000, ambas variantes
-- `gpu_amdahl_plot.png` — curva de Amdahl GPU (N como sustituto de p)
+- `gpu_amdahl_plot.png` — Smax = 1/fN, límite teórico de speedup a partir del overhead de
+  transferencias medido por N (no es un barrido clásico de Amdahl(p): N es tamaño de problema,
+  no recursos paralelos)
 - `gpu_variant_comparison.png` — básica vs. shared memory, mismo N
 - Reutiliza `trajectories_plot.png`/`energy_plot.png` del Lab 1 sin cambios
 
