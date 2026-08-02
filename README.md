@@ -269,7 +269,7 @@ rendimiento solo valen si salen de ahi, no de una corrida en CI.
 `make plots-gpu` genera en `output/`:
 
 - `gpu_speedup_vs_n.png` — speedup GPU (paso completo) vs. CPU serial vs. N, ambas variantes
-- `gpu_transfer_impact.png` — tiempo kernel-only vs. con transferencias vs. N, por variante
+- `gpu_transfer_impact.png` — tiempo kernel-only vs. con transferencias vs. end-to-end, vs. N, por variante
 - `gpu_blockdim_study.png` — tiempo kernel-only vs. blockDim.x a N=2000, ambas variantes
 - `gpu_amdahl_plot.png` — Smax = 1/fN (límite teórico a partir del overhead end-to-end real,
   transferencias + Euler en host, medido por N) junto al speedup medido, para comparar predicción
