@@ -30,15 +30,19 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
   con tolerancia `rtol = 1e-4`, `atol = 1e-8`.
 - `CHANGELOG.md` (este archivo) y documentación del flujo Git (protección de `main`, ramas,
   issues, releases) en el README.
-- Tres agentes de IA en CI usando GitHub Models (`actions/ai-inference`, sin costo ni secrets
-  adicionales): documentador, revisor de bugs y revisor de MR. Cada uno responde en JSON
-  estructurado y un script (`scripts/agents/apply_edits.py`) valida y aplica la acción
-  resultante (issue, PR mecánico acotado, o comentario de intervención humana).
+- Tres agentes de IA en CI (documentador, revisor de bugs y revisor de MR) corriendo sobre
+  Ollama local dentro del propio runner (`qwen2.5-coder:7b-instruct-q4_K_M`, sin costo ni
+  secrets, modelo cacheado entre corridas con `actions/cache`). Cada uno responde en JSON
+  estructurado y un script (`scripts/agents/apply_edits.py` / `parse_mr_response.py`) valida
+  y aplica la acción resultante (issue, PR mecánico acotado, o comentario de intervención
+  humana).
 
 ### Changed
 
 - CI: reconstruye la imagen Docker localmente cuando el PR modifica el `Dockerfile`, en vez
   de depender siempre de la imagen publicada en GHCR.
+- Agentes de IA: motor cambiado de GitHub Models (`actions/ai-inference`) a Ollama local,
+  tras la retirada completa de GitHub Models el 30 de julio de 2026 (issue #29).
 - El `.dat` de benchmark de la simulación completa CPU (Lab 1) se renombra de
   `benchmark_results.dat` a `benchmark_results_lab1.dat`, para no chocar con el
   `benchmark_results.dat` de la matriz de benchmarks GPU del Lab 2 (esquema de columnas
