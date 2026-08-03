@@ -7,6 +7,10 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [2.0.0-lab2] - 2026-08-02
+
+Entrega del Laboratorio 2 (Programación GPGPU con CUDA).
+
 ### Added
 
 - Kernels CUDA para `computeAccelerations`, variante básica y variante con memoria
@@ -31,8 +35,7 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 - `CHANGELOG.md` (este archivo) y documentación del flujo Git (protección de `main`, ramas,
   issues, releases) en el README.
 - Tres agentes de IA en CI (documentador, revisor de bugs y revisor de MR) corriendo sobre
-  Ollama local dentro del propio runner (`qwen2.5-coder:7b-instruct-q4_K_M`, sin costo ni
-  secrets, modelo cacheado entre corridas con `actions/cache`). Cada uno responde en JSON
+  Ollama local dentro del propio runner (`qwen2.5-coder:7b-instruct-q4_K_M`, modelo cacheado entre corridas con `actions/cache`). Cada uno responde en JSON
   estructurado y un script (`scripts/agents/apply_edits.py` / `parse_mr_response.py`) valida
   y aplica la acción resultante (issue, PR mecánico acotado, o comentario de intervención
   humana).
@@ -103,5 +106,6 @@ Entrega del Laboratorio 1 (Programación paralela con OpenMP).
 - Scripts de visualización (`Visualizer` y scripts Python) para speedup, eficiencia,
   schedules, Amdahl, trayectorias y energía.
 
-[Unreleased]: https://github.com/thxmohamed/distri-lab-1/compare/v1.0.0-lab1...HEAD
+[Unreleased]: https://github.com/thxmohamed/distri-lab-1/compare/v2.0.0-lab2...HEAD
+[2.0.0-lab2]: https://github.com/thxmohamed/distri-lab-1/releases/tag/v2.0.0-lab2
 [1.0.0-lab1]: https://github.com/thxmohamed/distri-lab-1/releases/tag/v1.0.0-lab1
