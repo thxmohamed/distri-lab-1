@@ -7,6 +7,13 @@ proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `plot_gpu_amdahl.py`: `fN` se calculaba como `(T_endtoend - T_kernel) / T_endtoend` (relativo
+  al propio tiempo GPU), por lo que `Smax=1/fN` podía dar un valor menor al speedup medido —
+  contradictorio para algo llamado "límite teórico". Ahora `fN = (T_endtoend - T_kernel) / T_CPU`
+  (relativo al tiempo CPU serial), lo que garantiza `Smax >= speedup medido` en todo punto.
+
 ## [2.0.0-lab2] - 2026-08-02
 
 Entrega del Laboratorio 2 (Programación GPGPU con CUDA).
